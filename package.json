@@ -4,7 +4,6 @@
   "description": "PrairieLearn launcher runnable through npx.",
   "type": "module",
   "bin": {
-    "prairielearn": "./bin/prairielearn",
     "pl": "./bin/pl"
   },
   "files": [
