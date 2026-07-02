@@ -29,3 +29,7 @@ export function shellQuote(value: string): string {
   if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) return value;
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
+
+export function boldBright(value: string): string {
+  return `\x1b[1;97m${value}\x1b[0m`;
+}

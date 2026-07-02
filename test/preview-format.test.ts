@@ -40,6 +40,27 @@ test("generates stable command previews", () => {
   );
 });
 
+test("omits path preview when PRAIRIELEARN_PATH already provides it", () => {
+  const previous = process.env.PRAIRIELEARN_PATH;
+  process.env.PRAIRIELEARN_PATH = "/pl path";
+  try {
+    assert.equal(
+      previewRunCommand({
+        path: "/pl path",
+        branch: null,
+        force_rebuild: false,
+        local_only: false,
+        no_watch_upstream: false,
+        quiet: false,
+      }),
+      "pl run",
+    );
+  } finally {
+    if (previous === undefined) delete process.env.PRAIRIELEARN_PATH;
+    else process.env.PRAIRIELEARN_PATH = previous;
+  }
+});
+
 test("slugifies branch refs for temp worktrees", () => {
   assert.equal(branchSlug("Feature/ABC@123"), "feature-abc-123");
 });

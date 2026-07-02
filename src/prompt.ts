@@ -1,12 +1,14 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import {
+  autocomplete as clackAutocomplete,
   cancel as clackCancel,
   confirm as clackConfirm,
   intro,
   isCancel,
   note,
   outro,
+  path as clackPath,
   select as clackSelect,
   spinner,
   text,
@@ -76,6 +78,19 @@ export async function ask(message: string, defaultValue?: string): Promise<strin
   }
 }
 
+export async function askDirectory(message: string, defaultValue?: string): Promise<string> {
+  if (canUseTui()) {
+    const answer = await clackPath({
+      message,
+      directory: true,
+      initialValue: defaultValue,
+    });
+    return unwrapPrompt(answer).trim();
+  }
+
+  return ask(message, defaultValue);
+}
+
 export async function confirm(message: string, defaultValue = true): Promise<boolean> {
   if (canUseTui()) {
     return unwrapPrompt(await clackConfirm({ message, initialValue: defaultValue }));
@@ -85,6 +100,32 @@ export async function confirm(message: string, defaultValue = true): Promise<boo
   const answer = (await ask(`${message} (${label})`)).toLowerCase();
   if (!answer) return defaultValue;
   return answer === "y" || answer === "yes";
+}
+
+export async function autocomplete<T extends string>(
+  message: string,
+  choices: Array<{ name: string; value: T; hint?: string; disabled?: boolean }>,
+  defaultValue: T,
+  placeholder?: string,
+): Promise<T> {
+  if (canUseTui()) {
+    return unwrapPrompt(
+      await clackAutocomplete<string>({
+        message,
+        options: choices.map((choice) => ({
+          label: choice.name,
+          value: choice.value,
+          ...(choice.hint === undefined ? {} : { hint: choice.hint }),
+          ...(choice.disabled === undefined ? {} : { disabled: choice.disabled }),
+        })),
+        initialValue: defaultValue,
+        placeholder,
+        maxItems: 8,
+      }),
+    ) as T;
+  }
+
+  return select(message, choices, defaultValue);
 }
 
 export async function select<T extends string>(

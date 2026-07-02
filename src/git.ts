@@ -52,7 +52,7 @@ export async function repoRoot(cwd: string): Promise<string> {
 }
 
 export async function localBranches(cwd: string): Promise<string[]> {
-  const result = await git(cwd, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]);
+  const result = await git(cwd, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads"]);
   if (result.status !== 0) return [];
   return result.stdout
     .split(/\r?\n/)
@@ -61,7 +61,7 @@ export async function localBranches(cwd: string): Promise<string[]> {
 }
 
 export async function remoteOnlyBranches(cwd: string): Promise<string[]> {
-  const result = await git(cwd, ["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"]);
+  const result = await git(cwd, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/remotes/origin"]);
   if (result.status !== 0) return [];
   return result.stdout
     .split(/\r?\n/)

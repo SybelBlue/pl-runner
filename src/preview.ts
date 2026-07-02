@@ -1,4 +1,5 @@
 import { shellQuote } from "./format.js";
+import { resolvePath } from "./path.js";
 import type { DockerConfig, DockerOptions, GitConfig, RunOptions } from "./types.js";
 
 export function previewRunCommand(options: RunOptions | GitConfig): string {
@@ -6,7 +7,7 @@ export function previewRunCommand(options: RunOptions | GitConfig): string {
   if (options.branch) parts.push("--branch", shellQuote(options.branch));
   if (options.force_rebuild) parts.push("--force-rebuild");
   if (options.local_only) parts.push("--local-only");
-  if (options.path) parts.push("--path", shellQuote(options.path));
+  if (shouldIncludePath(options.path)) parts.push("--path", shellQuote(options.path));
   if (options.no_watch_upstream) parts.push("--no-watch-upstream");
   if (options.quiet) parts.push("--quiet");
   return parts.join(" ");
@@ -20,4 +21,11 @@ export function previewDockerCommand(options: DockerOptions | DockerConfig): str
   if (options.quiet) parts.push("--quiet");
   parts.push(shellQuote(options.course_path));
   return parts.join(" ");
+}
+
+function shouldIncludePath(optionPath: string | undefined): optionPath is string {
+  if (!optionPath) return false;
+  const envPath = process.env.PRAIRIELEARN_PATH;
+  if (!envPath) return true;
+  return resolvePath(optionPath) !== resolvePath(envPath);
 }

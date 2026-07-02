@@ -1,7 +1,25 @@
 import { dockerConfigFromOptions, launchDocker } from "./docker.js";
+import {
+  checkPreflightDependencies,
+  formatDependencyStatus,
+  missingDependencies,
+  type PreflightDependencies,
+} from "./deps.js";
+import { boldBright } from "./format.js";
 import { currentBranch, localBranches, remoteOnlyBranches, validateProjectPath } from "./git.js";
 import { hasInternet } from "./internet.js";
-import { ask, confirm, endPrompt, PromptCanceled, select, showNote, startPrompt, withSpinner } from "./prompt.js";
+import {
+  ask,
+  askDirectory,
+  autocomplete,
+  confirm,
+  endPrompt,
+  PromptCanceled,
+  select,
+  showNote,
+  startPrompt,
+  withSpinner,
+} from "./prompt.js";
 import { previewDockerCommand, previewRunCommand } from "./preview.js";
 import { applyOfflineDefaults, launchRun, normalizeRunConfig } from "./run.js";
 import { loadSavedConfig, saveConfig } from "./state.js";
@@ -15,15 +33,21 @@ type Preflight = {
   internet_available: boolean;
   configuredPath: string | null;
   currentBranch: string | null;
+  deps: PreflightDependencies;
 };
 
 export async function launchInteractive(baseRun: RunOptions, logger: Logger): Promise<number> {
   try {
     startPrompt("PrairieLearn launcher", baseRun.quiet);
     const preflight = await loadPreflight(baseRun, logger);
+    const choices = launcherChoices(preflight, baseRun);
+    if (!choices.some((choice) => !choice.disabled)) {
+      logger.error("No launch mode is available until missing command dependencies are installed.");
+      return 1;
+    }
     const mode = await select(
       "What do you want to launch?",
-      launcherChoices(preflight, baseRun),
+      choices,
       recommendedLauncherMode(preflight),
     );
 
@@ -42,11 +66,13 @@ async function loadPreflight(baseRun: RunOptions, logger: Logger): Promise<Prefl
     loadSavedConfig(),
     withSpinner("Checking network", () => hasInternet(), baseRun.quiet),
   ]);
+  const deps = await withSpinner("Checking command dependencies", () => checkPreflightDependencies(), baseRun.quiet);
   const configuredPath = baseRun.path ?? process.env.PRAIRIELEARN_PATH ?? null;
-  const current = configuredPath ? await currentBranch(resolvePath(configuredPath)) : null;
+  const current = configuredPath && deps.git ? await currentBranch(resolvePath(configuredPath)) : null;
 
   const details = [
     `network: ${internet_available ? "online" : "offline"}`,
+    `commands: ${formatDependencyStatus(deps)}`,
     configuredPath ? `project: ${resolvePath(configuredPath)}` : "project: not configured",
     current ? `branch: ${current}` : null,
     saved ? `previous: ${previewSaved(saved)}` : null,
@@ -54,17 +80,20 @@ async function loadPreflight(baseRun: RunOptions, logger: Logger): Promise<Prefl
   showNote(details.join("\n"), "Detected", baseRun.quiet);
 
   if (!internet_available) logger.debug("network unavailable during launcher preflight");
-  return { saved, internet_available, configuredPath, currentBranch: current };
+  const missing = missingDependencies(deps, ["git", "docker", "pnpm", "uv"]);
+  if (missing.length > 0) logger.warn(`missing command dependencies: ${missing.join(", ")}`);
+  return { saved, internet_available, configuredPath, currentBranch: current, deps };
 }
 
-export function recommendedLauncherMode(preflight: Pick<Preflight, "saved" | "configuredPath">): LauncherMode {
-  if (preflight.saved) return "previous";
-  if (preflight.configuredPath) return "defaults";
-  return "docker";
+export function recommendedLauncherMode(preflight: Pick<Preflight, "saved" | "configuredPath" | "deps">): LauncherMode {
+  if (preflight.saved && savedConfigDependenciesAvailable(preflight.saved, preflight.deps)) return "previous";
+  if (preflight.configuredPath && gitRunDependenciesAvailable(preflight.deps)) return "defaults";
+  if (dockerDependenciesAvailable(preflight.deps)) return "docker";
+  return "custom";
 }
 
 export function launcherChoices(
-  preflight: Pick<Preflight, "saved" | "configuredPath" | "currentBranch">,
+  preflight: Pick<Preflight, "saved" | "configuredPath" | "currentBranch" | "deps">,
   baseRun: RunOptions,
 ): Array<{ name: string; value: LauncherMode; hint?: string; disabled?: boolean }> {
   const dockerPreview = previewDockerCommand({
@@ -75,36 +104,66 @@ export function launcherChoices(
     quiet: baseRun.quiet,
   });
 
+  const gitMissing = missingDependencies(preflight.deps, ["git", "pnpm", "uv"]);
+  const dockerMissing = missingDependencies(preflight.deps, ["docker"]);
+  const savedMissing = preflight.saved ? missingForSavedConfig(preflight.saved, preflight.deps) : [];
+
   return [
     {
       name: "Run previous config",
       value: "previous",
-      hint: preflight.saved ? previewSaved(preflight.saved) : "No saved config yet",
-      disabled: !preflight.saved,
+      hint: preflight.saved ? missingHint(savedMissing) ?? previewSaved(preflight.saved) : "No saved config yet",
+      disabled: !preflight.saved || savedMissing.length > 0,
     },
     {
-      name: preflight.currentBranch ? `Run configured checkout (${preflight.currentBranch})` : "Run configured checkout",
+      name: preflight.currentBranch ? `Run default configuration on current branch (${preflight.currentBranch})` : "Run default configuration",
       value: "defaults",
-      hint: preflight.configuredPath ? previewRunCommand(baseRun) : "Needs --path or PRAIRIELEARN_PATH",
-      disabled: !preflight.configuredPath,
+      hint: missingHint(gitMissing) ?? (preflight.configuredPath ? previewRunCommand(baseRun) : "Needs --path or PRAIRIELEARN_PATH"),
+      disabled: !preflight.configuredPath || gitMissing.length > 0,
     },
-    { name: "Configure git checkout", value: "custom", hint: "Choose path, branch, rebuild, and watch options" },
-    { name: "Run with Docker", value: "docker", hint: dockerPreview },
+    {
+      name: "Configure git checkout",
+      value: "custom",
+      hint: missingHint(gitMissing) ?? "Choose path, branch, rebuild, and watch options",
+      disabled: gitMissing.length > 0,
+    },
+    {
+      name: "Run with Docker",
+      value: "docker",
+      hint: missingHint(dockerMissing) ?? dockerPreview,
+      disabled: dockerMissing.length > 0,
+    },
   ];
+}
+
+function gitRunDependenciesAvailable(deps: PreflightDependencies): boolean {
+  return missingDependencies(deps, ["git", "pnpm", "uv"]).length === 0;
+}
+
+function dockerDependenciesAvailable(deps: PreflightDependencies): boolean {
+  return missingDependencies(deps, ["docker"]).length === 0;
+}
+
+function savedConfigDependenciesAvailable(config: SavedConfig, deps: PreflightDependencies): boolean {
+  return missingForSavedConfig(config, deps).length === 0;
+}
+
+function missingForSavedConfig(config: SavedConfig, deps: PreflightDependencies) {
+  return config.mode === "git" ? missingDependencies(deps, ["git", "pnpm", "uv"]) : missingDependencies(deps, ["docker"]);
+}
+
+function missingHint(commands: string[]): string | undefined {
+  return commands.length > 0 ? `Missing: ${commands.join(", ")}` : undefined;
 }
 
 async function runDefaults(baseRun: RunOptions, logger: Logger): Promise<number> {
   let config = await normalizeRunConfig(baseRun, true, logger);
   if (!config) {
-    const projectPath = await ask("Project path", process.env.PRAIRIELEARN_PATH);
+    const projectPath = await askDirectory("Project path", process.env.PRAIRIELEARN_PATH);
     config = await normalizeRunConfig({ ...baseRun, path: projectPath }, true, logger);
   }
   if (!config) return 1;
   showRunConfig(config);
-  if (!(await confirm("Run this command now", true))) {
-    endPrompt("Canceled.", config.quiet);
-    return 0;
-  }
   await saveConfig(config, logger);
   return launchRun(config, logger, true);
 }
@@ -117,27 +176,19 @@ async function runPrevious(saved: SavedConfig | null, quiet: boolean, logger: Lo
   const config = { ...saved, quiet };
   if (config.mode === "git") {
     config.internet_available = await hasInternet();
-    if (!config.path) config.path = await ask("Project path", process.env.PRAIRIELEARN_PATH);
+    if (!config.path) config.path = await askDirectory("Project path", process.env.PRAIRIELEARN_PATH);
     applyOfflineDefaults(config, logger);
     showRunConfig(config);
-    if (!(await confirm("Run this command now", true))) {
-      endPrompt("Canceled.", config.quiet);
-      return 0;
-    }
     await saveConfig(config, logger);
     return launchRun(config, logger, true);
   }
   showDockerConfig(config);
-  if (!(await confirm("Run this command now", true))) {
-    endPrompt("Canceled.", config.quiet);
-    return 0;
-  }
   await saveConfig(config, logger);
   return launchDocker(config, logger);
 }
 
 async function runCustom(baseRun: RunOptions, logger: Logger): Promise<number> {
-  const projectPath = resolvePath(await ask("Project path", baseRun.path ?? process.env.PRAIRIELEARN_PATH));
+  const projectPath = resolvePath(await askDirectory("Project path", baseRun.path ?? process.env.PRAIRIELEARN_PATH));
   if (!(await validateProjectPath(projectPath, logger))) return 1;
   const internet_available = baseRun.internet_available ?? (await hasInternet());
 
@@ -145,7 +196,6 @@ async function runCustom(baseRun: RunOptions, logger: Logger): Promise<number> {
   const local = await localBranches(projectPath);
   const remote = internet_available ? await remoteOnlyBranches(projectPath) : [];
   const branch = await askBranch(current, local, remote, internet_available, logger);
-  if (remote.length > 0) logger.debug(`available remote branches: ${remote.join(", ")}`);
 
   const config = {
     mode: "git" as const,
@@ -184,7 +234,7 @@ async function askBranch(
     return branch === "current" ? null : branch.replace(/^origin\//, "");
   }
 
-  const selected = await select(
+  const selected = await autocomplete(
     "Branch",
     [
       { name: current ? `Current branch (${current})` : "Current branch", value: "__current", hint: "Use the checkout as-is" },
@@ -196,6 +246,7 @@ async function askBranch(
       { name: "Type another branch", value: "__custom", hint: internet_available ? "Fetchable branch or ref" : "Must exist locally" },
     ],
     "__current",
+    "Type to filter branches",
   );
 
   if (selected === "__current") return null;
@@ -210,10 +261,17 @@ async function askBranch(
 }
 
 async function runDockerInteractive(quiet: boolean, logger: Logger): Promise<number> {
-  const course_path = await ask("Course directory", ".");
+  const course_path = await askDirectory("Course directory", ".");
   const port = await ask("Port mapping", "3000:3000");
-  const tmpAnswer = await ask("Jobs directory", "(make temp)");
-  const tmp_dir = tmpAnswer === "(make temp)" ? systemTmpDir() : tmpAnswer;
+  const jobsMode = await select(
+    "Jobs directory",
+    [
+      { name: "Make temporary directory", value: "temp", hint: systemTmpDir() },
+      { name: "Choose directory", value: "choose", hint: "Use an existing directory" },
+    ],
+    "temp",
+  );
+  const tmp_dir = jobsMode === "temp" ? systemTmpDir() : await askDirectory("Jobs directory", systemTmpDir());
   const local_only = await confirm("Use local Docker image only", false);
   const config: DockerConfig = await dockerConfigFromOptions({ course_path, port, tmp_dir, local_only, quiet });
   showDockerConfig(config);
@@ -240,7 +298,7 @@ function showRunConfig(config: RunOptions & { path: string; internet_available?:
       `watch upstream: ${!config.no_watch_upstream}`,
       `network: ${config.internet_available === false ? "offline" : "online"}`,
       "",
-      previewRunCommand(config),
+      boldBright(previewRunCommand(config)),
     ].join("\n"),
     "Ready",
     config.quiet,
@@ -256,14 +314,14 @@ function showDockerConfig(config: DockerConfig): void {
       `jobs directory: ${config.tmp_dir}`,
       `local image only: ${config.local_only}`,
       "",
-      previewDockerCommand(config),
+      boldBright(previewDockerCommand(config)),
     ].join("\n"),
     "Ready",
     config.quiet,
   );
 }
 
-function uniqueBranches(current: string | null, local: string[], remote: string[]): string[] {
+export function uniqueBranches(current: string | null, local: string[], remote: string[]): string[] {
   const branches = [...local, ...remote].filter((branch) => branch !== current);
-  return [...new Set(branches)].sort((a, b) => a.localeCompare(b));
+  return [...new Set(branches)];
 }

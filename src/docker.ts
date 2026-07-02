@@ -49,8 +49,8 @@ export async function launchDocker(options: DockerOptions, logger: Logger): Prom
     quiet: options.quiet,
     env: withoutVirtualEnv(),
   });
-  if (status !== 0) logger.warn(`docker run exited with ${status}`);
-  else logger.info(`docker run exited with ${status}`);
+  logger.info("--- docker run ---");
+  (status !== 0 ? logger.warn : logger.info)(`docker run exited with ${status}`);
   return status;
 }
 
