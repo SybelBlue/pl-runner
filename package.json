@@ -1,0 +1,35 @@
+{
+  "name": "prairielearn-runner",
+  "version": "0.1.0",
+  "description": "PrairieLearn launcher runnable through npx.",
+  "type": "module",
+  "bin": {
+    "prairielearn": "./bin/prairielearn",
+    "pl": "./bin/pl"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "functions",
+    "completions",
+    "npm-package-functional-spec.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "prepare": "npm run build",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
+    "typecheck:src": "tsc -p tsconfig.json --noEmit",
+    "typecheck:test": "tsc -p test/tsconfig.json",
+    "lint": "npm run typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}
