@@ -5,7 +5,7 @@ import { git, validateProjectPath } from "./git.js";
 import { resolvePath, withoutVirtualEnv } from "./path.js";
 import { runInteractiveProcess } from "./process.js";
 import { startUpstreamWatch } from "./watch.js";
-import type { GitConfig, Logger, RunOptions } from "./types.js";
+import type { CommandResult, GitConfig, Logger, RunOptions } from "./types.js";
 
 export async function normalizeRunConfig(options: RunOptions, interactive: boolean, logger: Logger): Promise<GitConfig | null> {
   const rawPath = options.path ?? process.env.PRAIRIELEARN_PATH;
@@ -62,7 +62,7 @@ export async function launchRun(config: GitConfig, logger: Logger, interactive =
     if (!config.local_only) {
       const pull = await git(launchPath, ["pull"]);
       if (pull.status !== 0) {
-        logger.warn(`git pull exited with ${pull.status}`);
+        logGitPullFailure(pull, launchPath, logger);
         const shouldContinue = interactive ? await confirm("Continue anyway", false) : false;
         if (!shouldContinue) return pull.status;
       }
@@ -108,11 +108,35 @@ export async function launchRun(config: GitConfig, logger: Logger, interactive =
   }
 }
 
+function logGitPullFailure(result: CommandResult, cwd: string, logger: Logger): void {
+  logger.warn(`git pull exited with ${result.status}`);
+  logger.warn(`command: git pull`);
+  logger.warn(`directory: ${cwd}`);
+  logCommandOutput("stderr", result.stderr, logger);
+  logCommandOutput("stdout", result.stdout, logger);
+}
+
+function logCommandOutput(label: string, output: string, logger: Logger): void {
+  const trimmed = output.trim();
+  if (!trimmed) return;
+  logger.warn(`${label}:`);
+  for (const line of truncateLines(trimmed).split(/\r?\n/)) {
+    logger.warn(`  ${line}`);
+  }
+}
+
+function truncateLines(value: string, maxLines = 20): string {
+  const lines = value.split(/\r?\n/);
+  if (lines.length <= maxLines) return value;
+  const omitted = lines.length - maxLines;
+  return [...lines.slice(0, maxLines), `... ${omitted} more line${omitted === 1 ? "" : "s"} omitted`].join("\n");
+}
+
 async function runMakeDeps(projectPath: string, quiet: boolean, logger: Logger): Promise<number> {
   logger.info("--- make deps ---");
   const status = await runInteractiveProcess("make", ["-C", projectPath, "deps"], {
     quiet,
-    env: withoutVirtualEnv(),
+    env: { ...withoutVirtualEnv(), FORCE_COLOR: "1" },
   });
   if (status !== 0) logger.warn(`make deps exited with ${status}`);
   return status;
