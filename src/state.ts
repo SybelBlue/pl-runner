@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { normalizeDockerImageTag } from "./docker.js";
 import { expandHome } from "./path.js";
 import type { DockerConfig, GitConfig, Logger, SavedConfig } from "./types.js";
 
@@ -58,6 +59,7 @@ export function parseConfigYaml(contents: string): SavedConfig | null {
       const config: DockerConfig = {
         mode: "docker",
         course_path: requireString(values, "course_path"),
+        image: normalizeDockerImageTag(optionalString(values.get("image")) ?? undefined),
         port: requireString(values, "port"),
         tmp_dir: requireString(values, "tmp_dir"),
         local_only: requireBoolean(values, "local_only"),
@@ -88,6 +90,7 @@ export function stringifyConfigYaml(config: SavedConfig): string {
   return [
     "mode: docker",
     `course_path: ${formatScalar(config.course_path)}`,
+    `image: ${formatScalar(config.image)}`,
     `port: ${formatScalar(config.port)}`,
     `tmp_dir: ${formatScalar(config.tmp_dir)}`,
     `local_only: ${config.local_only}`,

@@ -14,9 +14,10 @@ test("parses run options and quiet aliases", () => {
 });
 
 test("parses docker options and positional course path", () => {
-  const parsed = parseArgs(["docker", "--port", "3001:3000", "--tmp-dir", "/tmp", "-l", "-q", "course"]);
+  const parsed = parseArgs(["docker", "--image", "latest", "--port", "3001:3000", "--tmp-dir", "/tmp", "-l", "-q", "course"]);
   assert.equal(parsed.command, "docker");
   assert.deepEqual(parsed.docker, {
+    image: "latest",
     port: "3001:3000",
     tmp_dir: "/tmp",
     local_only: true,

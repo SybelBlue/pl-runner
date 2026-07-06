@@ -1,5 +1,7 @@
 export type LaunchMode = "git" | "docker";
 
+export type DockerImageTag = "us-prod-live" | "latest";
+
 export type RunOptions = {
   path?: string;
   branch?: string | null;
@@ -12,6 +14,7 @@ export type RunOptions = {
 
 export type DockerOptions = {
   course_path: string;
+  image: DockerImageTag;
   port: string;
   tmp_dir: string;
   local_only: boolean;

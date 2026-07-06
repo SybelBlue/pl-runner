@@ -1,11 +1,17 @@
-import { dockerConfigFromOptions, launchDocker } from "./docker.js";
+import {
+  DEFAULT_DOCKER_IMAGE_TAG,
+  DOCKER_IMAGE_REPOSITORY,
+  SUPPORTED_DOCKER_IMAGE_TAGS,
+  dockerConfigFromOptions,
+  launchDocker,
+} from "./docker.js";
 import {
   checkPreflightDependencies,
   formatDependencyStatus,
   missingDependencies,
   type PreflightDependencies,
 } from "./deps.js";
-import { boldBright } from "./format.js";
+import { boldBright, formatRelativeTime } from "./format.js";
 import { currentBranch, localBranches, remoteOnlyBranches, validateProjectPath } from "./git.js";
 import { hasInternet } from "./internet.js";
 import {
@@ -23,7 +29,7 @@ import {
 import { previewDockerCommand, previewRunCommand } from "./preview.js";
 import { applyOfflineDefaults, launchRun, normalizeRunConfig } from "./run.js";
 import { loadSavedConfig, saveConfig } from "./state.js";
-import type { DockerConfig, Logger, RunOptions, SavedConfig } from "./types.js";
+import type { DockerConfig, DockerImageTag, Logger, RunOptions, SavedConfig } from "./types.js";
 import { resolvePath, systemTmpDir } from "./path.js";
 
 type LauncherMode = "defaults" | "previous" | "custom" | "docker";
@@ -54,7 +60,7 @@ export async function launchInteractive(baseRun: RunOptions, logger: Logger): Pr
     if (mode === "defaults") return runDefaults({ ...baseRun, internet_available: preflight.internet_available }, logger);
     if (mode === "previous") return runPrevious(preflight.saved, baseRun.quiet, logger);
     if (mode === "custom") return runCustom({ ...baseRun, internet_available: preflight.internet_available }, logger);
-    return runDockerInteractive(baseRun.quiet, logger);
+    return runDockerInteractive(preflight.internet_available, baseRun.quiet, logger);
   } catch (error) {
     if (error instanceof PromptCanceled) return 130;
     throw error;
@@ -99,6 +105,7 @@ export function launcherChoices(
   const dockerPreview = previewDockerCommand({
     course_path: ".",
     port: "3000:3000",
+    image: DEFAULT_DOCKER_IMAGE_TAG,
     tmp_dir: systemTmpDir(),
     local_only: false,
     quiet: baseRun.quiet,
@@ -182,6 +189,7 @@ async function runPrevious(saved: SavedConfig | null, quiet: boolean, logger: Lo
     await saveConfig(config, logger);
     return launchRun(config, logger, true);
   }
+  config.image ??= DEFAULT_DOCKER_IMAGE_TAG;
   showDockerConfig(config);
   await saveConfig(config, logger);
   return launchDocker(config, logger);
@@ -260,9 +268,14 @@ async function askBranch(
   return branch;
 }
 
-async function runDockerInteractive(quiet: boolean, logger: Logger): Promise<number> {
+async function runDockerInteractive(internet_available: boolean, quiet: boolean, logger: Logger): Promise<number> {
   const course_path = await askDirectory("Course directory", ".");
   const port = await ask("Port mapping", "3000:3000");
+  const image = await select(
+    "Docker image",
+    await dockerImageChoices(internet_available, quiet, logger),
+    DEFAULT_DOCKER_IMAGE_TAG,
+  );
   const jobsMode = await select(
     "Jobs directory",
     [
@@ -273,7 +286,7 @@ async function runDockerInteractive(quiet: boolean, logger: Logger): Promise<num
   );
   const tmp_dir = jobsMode === "temp" ? systemTmpDir() : await askDirectory("Jobs directory", systemTmpDir());
   const local_only = await confirm("Use local Docker image only", false);
-  const config: DockerConfig = await dockerConfigFromOptions({ course_path, port, tmp_dir, local_only, quiet });
+  const config: DockerConfig = await dockerConfigFromOptions({ course_path, image, port, tmp_dir, local_only, quiet });
   showDockerConfig(config);
   if (!(await confirm("Run this command now", true))) {
     endPrompt("Canceled.", config.quiet);
@@ -281,6 +294,47 @@ async function runDockerInteractive(quiet: boolean, logger: Logger): Promise<num
   }
   await saveConfig(config, logger);
   return launchDocker(config, logger);
+}
+
+async function dockerImageChoices(
+  internet_available: boolean,
+  quiet: boolean,
+  logger: Logger,
+): Promise<Array<{ name: string; value: DockerImageTag; hint?: string }>> {
+  if (!internet_available) {
+    logger.warn("offline: Docker image update hints are unavailable.");
+    return SUPPORTED_DOCKER_IMAGE_TAGS.map((tag) => ({ name: tag, value: tag, hint: "last update unknown" }));
+  }
+
+  const updated = await withSpinner("Checking Docker image tags", () => dockerTagUpdates(SUPPORTED_DOCKER_IMAGE_TAGS), quiet);
+  if (updated.size < SUPPORTED_DOCKER_IMAGE_TAGS.length) {
+    logger.warn("could not fetch all Docker image update hints.");
+  }
+  return SUPPORTED_DOCKER_IMAGE_TAGS.map((tag) => ({
+    name: tag,
+    value: tag,
+    hint: updated.get(tag) ? `updated ${formatRelativeTime((Date.now() - updated.get(tag)!.getTime()) / 1000)}` : "last update unknown",
+  }));
+}
+
+async function dockerTagUpdates(tags: DockerImageTag[]): Promise<Map<DockerImageTag, Date>> {
+  const entries = await Promise.all(tags.map(async (tag) => [tag, await dockerTagUpdatedAt(tag)] as const));
+  return new Map(entries.filter((entry): entry is [DockerImageTag, Date] => entry[1] !== null));
+}
+
+async function dockerTagUpdatedAt(tag: DockerImageTag): Promise<Date | null> {
+  try {
+    const response = await fetch(`https://hub.docker.com/v2/repositories/${DOCKER_IMAGE_REPOSITORY}/tags/${tag}`, {
+      signal: AbortSignal.timeout(2500),
+    });
+    if (!response.ok) return null;
+    const body = await response.json() as { last_updated?: unknown };
+    if (typeof body.last_updated !== "string") return null;
+    const updated = new Date(body.last_updated);
+    return Number.isNaN(updated.getTime()) ? null : updated;
+  } catch {
+    return null;
+  }
 }
 
 function previewSaved(config: SavedConfig): string {
@@ -310,6 +364,7 @@ function showDockerConfig(config: DockerConfig): void {
     [
       `mode: docker`,
       `course: ${config.course_path}`,
+      `image: ${config.image}`,
       `port: ${config.port}`,
       `jobs directory: ${config.tmp_dir}`,
       `local image only: ${config.local_only}`,

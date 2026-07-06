@@ -55,12 +55,13 @@ export async function withSpinner<T>(message: string, action: () => Promise<T>, 
   }
 }
 
-export async function ask(message: string, defaultValue?: string): Promise<string> {
+export async function ask(message: string, defaultValue?: string, placeholder?: string): Promise<string> {
   if (canUseTui()) {
     const answer = await text({
       message,
       defaultValue,
       initialValue: defaultValue,
+      placeholder,
     });
     return unwrapPrompt(answer).trim();
   }
@@ -68,7 +69,8 @@ export async function ask(message: string, defaultValue?: string): Promise<strin
   const rl = createInterface({ input, output });
   try {
     const suffix = defaultValue === undefined ? "" : ` [${defaultValue}]`;
-    const answer = await rl.question(`${message}${suffix}: `);
+    const hint = placeholder === undefined ? "" : ` (${placeholder})`;
+    const answer = await rl.question(`${message}${suffix}${hint}: `);
     return answer.trim() || defaultValue || "";
   } catch {
     output.write("\n");

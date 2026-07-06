@@ -1,6 +1,6 @@
 {
   "name": "@sybelblue/prairielearn-runner",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "PrairieLearn launcher runnable through npx.",
   "homepage": "https://github.com/SybelBlue/pl-runner#readme",
   "bugs": {

@@ -40,6 +40,7 @@ test("round trips docker config yaml", () => {
   const yaml = stringifyConfigYaml({
     mode: "docker",
     course_path: "/course path",
+    image: "latest",
     port: "3000:3000",
     tmp_dir: "/tmp",
     local_only: false,
@@ -48,10 +49,31 @@ test("round trips docker config yaml", () => {
   assert.deepEqual(parseConfigYaml(yaml), {
     mode: "docker",
     course_path: "/course path",
+    image: "latest",
     port: "3000:3000",
     tmp_dir: "/tmp",
     local_only: false,
     quiet: true,
+  });
+});
+
+test("defaults docker image for older saved configs", () => {
+  assert.deepEqual(parseConfigYaml([
+    "mode: docker",
+    "course_path: /course",
+    "port: 3000:3000",
+    "tmp_dir: /tmp",
+    "local_only: false",
+    "quiet: false",
+    "",
+  ].join("\n")), {
+    mode: "docker",
+    course_path: "/course",
+    image: "us-prod-live",
+    port: "3000:3000",
+    tmp_dir: "/tmp",
+    local_only: false,
+    quiet: false,
   });
 });
 

@@ -31,12 +31,24 @@ test("generates stable command previews", () => {
   assert.equal(
     previewDockerCommand({
       course_path: "/course",
+      image: "us-prod-live",
       port: "3001:3000",
       tmp_dir: "/tmp",
       local_only: true,
       quiet: false,
     }),
-    "pl docker --local-only --port 3001:3000 --tmp-dir /tmp /course",
+    "pl docker --local-only --port 3001:3000 /course",
+  );
+  assert.equal(
+    previewDockerCommand({
+      course_path: "/course",
+      image: "latest",
+      port: "3000:3000",
+      tmp_dir: "/tmp",
+      local_only: false,
+      quiet: false,
+    }),
+    "pl docker --image latest /course",
   );
 });
 

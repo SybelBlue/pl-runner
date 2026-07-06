@@ -30,6 +30,7 @@ type Parsed = {
   options: RunOptions;
   docker: {
     course_path?: string;
+    image?: string;
     port?: string;
     tmp_dir?: string;
     local_only?: boolean;
@@ -80,6 +81,7 @@ export function parseArgs(argv: string[]): Parsed {
     while (args.length > 0) {
       const arg = args.shift()!;
       if (arg === "-l" || arg === "--local-only") parsed.docker.local_only = true;
+      else if (arg === "--image") parsed.docker.image = requireValue(arg, args);
       else if (arg === "--port") parsed.docker.port = requireValue(arg, args);
       else if (arg === "--tmp-dir") parsed.docker.tmp_dir = requireValue(arg, args);
       else if (arg === "-q" || arg === "--quiet") parsed.docker.quiet = true;
@@ -115,6 +117,7 @@ Run options:
 
 Docker options:
   -l, --local-only
+  --image <us-prod-live|latest>
   --port <host:container>
   --tmp-dir <path>
   -q, --quiet`);

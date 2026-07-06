@@ -1,5 +1,6 @@
 import { shellQuote } from "./format.js";
 import { resolvePath } from "./path.js";
+import { DEFAULT_DOCKER_IMAGE_TAG } from "./docker.js";
 import type { DockerConfig, DockerOptions, GitConfig, RunOptions } from "./types.js";
 
 export function previewRunCommand(options: RunOptions | GitConfig): string {
@@ -16,8 +17,8 @@ export function previewRunCommand(options: RunOptions | GitConfig): string {
 export function previewDockerCommand(options: DockerOptions | DockerConfig): string {
   const parts = ["pl", "docker"];
   if (options.local_only) parts.push("--local-only");
+  if (options.image !== DEFAULT_DOCKER_IMAGE_TAG) parts.push("--image", shellQuote(options.image));
   if (options.port !== "3000:3000") parts.push("--port", shellQuote(options.port));
-  if (options.tmp_dir) parts.push("--tmp-dir", shellQuote(options.tmp_dir));
   if (options.quiet) parts.push("--quiet");
   parts.push(shellQuote(options.course_path));
   return parts.join(" ");
