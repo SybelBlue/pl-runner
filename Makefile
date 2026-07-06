@@ -10,4 +10,4 @@ build:
 	pnpm run build
 
 publish: build
-	pnpm publish --access public
+	pnpm login && pnpm publish --access public
