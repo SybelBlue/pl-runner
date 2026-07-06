@@ -1,10 +1,25 @@
 {
-  "name": "prairielearn-runner",
+  "name": "@sybelblue/prairielearn-runner",
   "version": "0.1.0",
   "description": "PrairieLearn launcher runnable through npx.",
+  "homepage": "https://github.com/SybelBlue/pl-runner#readme",
+  "bugs": {
+    "url": "https://github.com/SybelBlue/pl-runner/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SybelBlue/pl-runner.git"
+  },
+  "license": "ISC",
+  "author": "Serena Caraco",
   "type": "module",
+  "main": "index.js",
   "bin": {
-    "pl": "./bin/pl"
+    "prairielearn-runner": "bin/pl",
+    "pl": "bin/pl"
+  },
+  "directories": {
+    "test": "test"
   },
   "files": [
     "bin",
@@ -23,15 +38,15 @@
     "typecheck:test": "tsc -p test/tsconfig.json",
     "lint": "npm run typecheck"
   },
-  "engines": {
-    "node": ">=20"
+  "dependencies": {
+    "@clack/prompts": "1.5.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   },
-  "dependencies": {
-    "@clack/prompts": "1.5.0"
+  "engines": {
+    "node": ">=20"
   }
 }
