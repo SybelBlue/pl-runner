@@ -26,7 +26,7 @@ export function normalizeDockerImageTag(tag: string | undefined): DockerImageTag
   return DEFAULT_DOCKER_IMAGE_TAG;
 }
 
-export function requireDockerImageTag(tag: string | undefined): DockerImageTag {
+function requireDockerImageTag(tag: string | undefined): DockerImageTag {
   if (tag === undefined) return DEFAULT_DOCKER_IMAGE_TAG;
   if (SUPPORTED_DOCKER_IMAGE_TAGS.includes(tag as DockerImageTag)) return tag as DockerImageTag;
   throw new Error(`unsupported Docker image tag: ${tag}. Supported tags: ${SUPPORTED_DOCKER_IMAGE_TAGS.join(", ")}`);

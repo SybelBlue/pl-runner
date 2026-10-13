@@ -13,7 +13,6 @@
   "license": "ISC",
   "author": "Serena Caraco",
   "type": "module",
-  "main": "index.js",
   "bin": {
     "prairielearn-runner": "bin/pl",
     "pl": "bin/pl"

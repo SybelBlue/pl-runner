@@ -77,5 +77,3 @@ async function copyQuestionConversionDist(sourceRoot: string, targetRoot: string
     // Optional cache copy.
   }
 }
-
-export { formatRelativeTime };

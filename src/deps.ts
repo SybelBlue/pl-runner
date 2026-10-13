@@ -2,7 +2,7 @@ import { runCommand } from "./process.js";
 
 export type CommandDependency = "git" | "docker" | "pnpm" | "uv";
 
-export type DependencyStatus = {
+type DependencyStatus = {
   command: CommandDependency;
   available: boolean;
 };
@@ -11,7 +11,7 @@ export type PreflightDependencies = Record<CommandDependency, boolean>;
 
 const dependencies: CommandDependency[] = ["git", "docker", "pnpm", "uv"];
 
-export async function checkCommandDependency(command: CommandDependency): Promise<DependencyStatus> {
+async function checkCommandDependency(command: CommandDependency): Promise<DependencyStatus> {
   const result = await runCommand(command, ["--version"]);
   return { command, available: result.status === 0 };
 }

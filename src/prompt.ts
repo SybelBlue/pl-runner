@@ -20,7 +20,7 @@ export class PromptCanceled extends Error {
   }
 }
 
-export function canUseTui(): boolean {
+function canUseTui(): boolean {
   return Boolean(input.isTTY && output.isTTY);
 }
 

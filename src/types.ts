@@ -1,5 +1,3 @@
-export type LaunchMode = "git" | "docker";
-
 export type DockerImageTag = "us-prod-live" | "latest";
 
 export type RunOptions = {
