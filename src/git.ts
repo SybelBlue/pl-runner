@@ -17,19 +17,19 @@ export async function validateProjectPath(projectPath: string, logger: Logger): 
 
   const inside = await git(projectPath, ["rev-parse", "--is-inside-work-tree"]);
   if (inside.status !== 0 || inside.stdout.trim() !== "true") {
-    logger.error("Project path does not appear to be a git repository.");
+    logger.error("PrairieLearn server path does not appear to be a git repository.");
     return false;
   }
 
   const remotes = await git(projectPath, ["remote", "-v"]);
   if (!remotes.stdout.includes("PrairieLearn/PrairieLearn.git")) {
-    logger.warn("Project path does not appear to have a PrairieLearn/PrairieLearn.git remote.");
+    logger.warn("PrairieLearn server path does not appear to have a PrairieLearn/PrairieLearn.git remote.");
   }
 
   try {
     await fs.access(path.join(projectPath, "Makefile"));
   } catch {
-    logger.warn("Project path does not contain a Makefile.");
+    logger.warn("PrairieLearn server path does not contain a Makefile.");
   }
 
   return true;

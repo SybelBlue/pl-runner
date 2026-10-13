@@ -79,7 +79,7 @@ async function loadPreflight(baseRun: RunOptions, logger: Logger): Promise<Prefl
   const details = [
     `network: ${internet_available ? "online" : "offline"}`,
     `commands: ${formatDependencyStatus(deps)}`,
-    configuredPath ? `project: ${resolvePath(configuredPath)}` : "project: not configured",
+    configuredPath ? `PrairieLearn server: ${resolvePath(configuredPath)}` : "PrairieLearn server: not configured",
     current ? `branch: ${current}` : null,
     saved ? `previous: ${previewSaved(saved)}` : null,
   ].filter(Boolean);
@@ -166,7 +166,7 @@ function missingHint(commands: string[]): string | undefined {
 async function runDefaults(baseRun: RunOptions, logger: Logger): Promise<number> {
   let config = await normalizeRunConfig(baseRun, true, logger);
   if (!config) {
-    const projectPath = await askDirectory("Project path", process.env.PRAIRIELEARN_PATH);
+    const projectPath = await askDirectory("PrairieLearn server path", process.env.PRAIRIELEARN_PATH);
     config = await normalizeRunConfig({ ...baseRun, path: projectPath }, true, logger);
   }
   if (!config) return 1;
@@ -183,7 +183,7 @@ async function runPrevious(saved: SavedConfig | null, quiet: boolean, logger: Lo
   const config = { ...saved, quiet };
   if (config.mode === "git") {
     config.internet_available = await hasInternet();
-    if (!config.path) config.path = await askDirectory("Project path", process.env.PRAIRIELEARN_PATH);
+    if (!config.path) config.path = await askDirectory("PrairieLearn server path", process.env.PRAIRIELEARN_PATH);
     applyOfflineDefaults(config, logger);
     showRunConfig(config);
     await saveConfig(config, logger);
@@ -196,7 +196,9 @@ async function runPrevious(saved: SavedConfig | null, quiet: boolean, logger: Lo
 }
 
 async function runCustom(baseRun: RunOptions, logger: Logger): Promise<number> {
-  const projectPath = resolvePath(await askDirectory("Project path", baseRun.path ?? process.env.PRAIRIELEARN_PATH));
+  const projectPath = resolvePath(
+    await askDirectory("PrairieLearn server path", baseRun.path ?? process.env.PRAIRIELEARN_PATH),
+  );
   if (!(await validateProjectPath(projectPath, logger))) return 1;
   const internet_available = baseRun.internet_available ?? (await hasInternet());
 

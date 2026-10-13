@@ -10,7 +10,7 @@ complete -c pl -f -s q -l quiet -d 'Suppress PrairieLearn launcher output'
 complete -c pl -n '__fish_seen_subcommand_from run' -s b -l branch -r -d 'Branch, remote branch, or ref to launch'
 complete -c pl -n '__fish_seen_subcommand_from run' -s f -l force-rebuild -d 'Rebuild all dependencies before launch'
 complete -c pl -n '__fish_seen_subcommand_from run' -s l -l local-only -d 'Skip git pull before launch'
-complete -c pl -n '__fish_seen_subcommand_from run' -s p -l path -r -F -d 'PrairieLearn project checkout path'
+complete -c pl -n '__fish_seen_subcommand_from run' -s p -l path -r -F -d 'PrairieLearn server checkout path'
 complete -c pl -n '__fish_seen_subcommand_from run' -s q -l quiet -d 'Suppress PrairieLearn launcher output'
 complete -c pl -n '__fish_seen_subcommand_from run' -s w -l no-watch-upstream -d 'Disable upstream polling and auto-restart'
 
