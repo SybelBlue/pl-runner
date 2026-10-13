@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { launchDocker, normalizeDockerOptions } from "./docker.js";
 import { launchInteractive } from "./interactive.js";
 import { createLogger } from "./logger.js";
@@ -8,8 +9,13 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   const parsed = parseArgs(argv);
   const logger = createLogger(parsed.options.quiet);
 
-  if (parsed.help) {
+  if (parsed.command === "help" || parsed.help) {
     printHelp();
+    return 0;
+  }
+
+  if (parsed.command === "version" || parsed.version) {
+    printVersion();
     return 0;
   }
 
@@ -26,7 +32,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 }
 
 type Parsed = {
-  command: "run" | "docker" | null;
+  command: "run" | "docker" | "help" | "version" | null;
   options: RunOptions;
   docker: {
     course_path?: string;
@@ -37,6 +43,7 @@ type Parsed = {
     quiet?: boolean;
   };
   help: boolean;
+  version: boolean;
 };
 
 export function parseArgs(argv: string[]): Parsed {
@@ -51,14 +58,16 @@ export function parseArgs(argv: string[]): Parsed {
     },
     docker: {},
     help: false,
+    version: false,
   };
 
   const args = [...argv];
   if (args.includes("-h") || args.includes("--help")) parsed.help = true;
+  if (args.includes("-v") || args.includes("--version")) parsed.version = true;
 
   while (args.length > 0) {
     const arg = args.shift()!;
-    if (arg === "run" || arg === "docker") {
+    if (arg === "run" || arg === "docker" || arg === "help" || arg === "version") {
       parsed.command = arg;
       break;
     }
@@ -74,6 +83,7 @@ export function parseArgs(argv: string[]): Parsed {
       else if (arg === "-p" || arg === "--path") parsed.options.path = requireValue(arg, args);
       else if (arg === "-w" || arg === "--no-watch-upstream") parsed.options.no_watch_upstream = true;
       else if (arg === "-q" || arg === "--quiet") parsed.options.quiet = true;
+      else if (arg === "-h" || arg === "--help" || arg === "-v" || arg === "--version") continue;
       else throw new Error(`unknown run option: ${arg}`);
     }
   } else if (parsed.command === "docker") {
@@ -85,6 +95,7 @@ export function parseArgs(argv: string[]): Parsed {
       else if (arg === "--port") parsed.docker.port = requireValue(arg, args);
       else if (arg === "--tmp-dir") parsed.docker.tmp_dir = requireValue(arg, args);
       else if (arg === "-q" || arg === "--quiet") parsed.docker.quiet = true;
+      else if (arg === "-h" || arg === "--help" || arg === "-v" || arg === "--version") continue;
       else if (!arg.startsWith("-") && parsed.docker.course_path === undefined) parsed.docker.course_path = arg;
       else throw new Error(`unknown docker option: ${arg}`);
     }
@@ -101,11 +112,18 @@ function requireValue(option: string, args: string[]): string {
 }
 
 function printHelp(): void {
-  console.log(`Usage: pl [--quiet] [run|docker] [options]
+  console.log(`Usage: pl [--quiet] [command] [options]
 
 Commands:
   run       Launch PrairieLearn without opening the interactive launcher
   docker    Launch PrairieLearn from the Docker image
+  help      Show this help message
+  version   Show the installed version
+
+Global options:
+  -h, --help
+  -v, --version
+  -q, --quiet
 
 Run options:
   -b, --branch <branch-or-ref>
@@ -121,4 +139,14 @@ Docker options:
   --port <host:container>
   --tmp-dir <path>
   -q, --quiet`);
+}
+
+function printVersion(): void {
+  const packageJson = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { version?: unknown };
+  if (typeof packageJson.version !== "string") {
+    throw new Error("package version is missing");
+  }
+  console.log(packageJson.version);
 }

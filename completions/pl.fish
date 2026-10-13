@@ -1,10 +1,14 @@
 function __pl_seen_subcommand
     set -l cmd (commandline -opc)
-    contains -- run $cmd; or contains -- docker $cmd
+    contains -- run $cmd; or contains -- docker $cmd; or contains -- help $cmd; or contains -- version $cmd
 end
 
 complete -c pl -f -n 'not __pl_seen_subcommand' -a run -d 'Launch PrairieLearn without opening the interactive launcher'
 complete -c pl -f -n 'not __pl_seen_subcommand' -a docker -d 'Launch PrairieLearn from the Docker image'
+complete -c pl -f -n 'not __pl_seen_subcommand' -a help -d 'Show the help message'
+complete -c pl -f -n 'not __pl_seen_subcommand' -a version -d 'Show the installed version'
+complete -c pl -f -n 'not __pl_seen_subcommand' -s h -l help -d 'Show the help message'
+complete -c pl -f -n 'not __pl_seen_subcommand' -s v -l version -d 'Show the installed version'
 complete -c pl -f -s q -l quiet -d 'Suppress PrairieLearn launcher output'
 
 complete -c pl -n '__fish_seen_subcommand_from run' -s b -l branch -r -d 'Branch, remote branch, or ref to launch'
