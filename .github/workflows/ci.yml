@@ -34,5 +34,5 @@ jobs:
         run: |
           pnpm pack --pack-destination "$RUNNER_TEMP"
           mkdir -p "$RUNNER_TEMP/install"
-          npm install --prefix "$RUNNER_TEMP/install" "$RUNNER_TEMP/sybelblue-prairielearn-runner-0.2.0.tgz"
+          npm install --prefix "$RUNNER_TEMP/install" "$RUNNER_TEMP/sybelblue-prairielearn-runner-0.2.1.tgz"
           "$RUNNER_TEMP/install/node_modules/.bin/pl" version
