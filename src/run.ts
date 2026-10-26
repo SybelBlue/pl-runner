@@ -1,4 +1,3 @@
-import { confirm } from "./prompt.js";
 import { hasInternet } from "./internet.js";
 import { createBranchWorktree } from "./worktree.js";
 import { git, validateProjectPath } from "./git.js";
@@ -6,6 +5,17 @@ import { resolvePath, withoutVirtualEnv } from "./path.js";
 import { runInteractiveProcess } from "./process.js";
 import { startUpstreamWatch } from "./watch.js";
 import type { CommandResult, GitConfig, Logger, RunOptions } from "./types.js";
+
+export type LaunchControl = {
+  allowPullFailure?: boolean;
+  startDockerDaemon?: boolean;
+  shouldStop?: () => boolean;
+  onState?: (state: "preparing" | "starting" | "running") => void;
+  onProcess?: (terminate: (signal?: NodeJS.Signals) => void) => void;
+  onSpawn?: (pid: number | undefined) => void;
+  onOutput?: (source: "stdout" | "stderr", chunk: string, phase: string) => void;
+  onFailure?: (code: string, message: string) => void;
+};
 
 export async function normalizeRunConfig(options: RunOptions, interactive: boolean, logger: Logger): Promise<GitConfig | null> {
   const rawPath = options.path ?? process.env.PRAIRIELEARN_PATH;
@@ -38,8 +48,17 @@ export function applyOfflineDefaults(config: GitConfig, logger: Logger): void {
   config.force_rebuild = false;
 }
 
-export async function launchRun(config: GitConfig, logger: Logger, interactive = false): Promise<number> {
-  if (!(await validateProjectPath(config.path, logger))) return 1;
+export async function launchRun(
+  config: GitConfig,
+  logger: Logger,
+  _interactive = false,
+  control: LaunchControl = {},
+): Promise<number> {
+  control.onState?.("preparing");
+  if (!(await validateProjectPath(config.path, logger))) {
+    control.onFailure?.("INVALID_CONFIG", "PrairieLearn path is not a valid Git checkout");
+    return 1;
+  }
 
   let launchPath = config.path;
   let cleanup: (() => Promise<void>) | undefined;
@@ -59,21 +78,30 @@ export async function launchRun(config: GitConfig, logger: Logger, interactive =
       branchWorktree = true;
     }
 
+    if (control.shouldStop?.()) return 130;
+
     if (!config.local_only) {
       const pull = await git(launchPath, ["pull"]);
       if (pull.status !== 0) {
         logGitPullFailure(pull, launchPath, logger);
-        const shouldContinue = interactive ? await confirm("Continue anyway", false) : false;
-        if (!shouldContinue) return pull.status;
+        if (!control.allowPullFailure) {
+          control.onFailure?.("PULL_FAILED", `git pull exited with ${pull.status}`);
+          return pull.status;
+        }
+        logger.warn("continuing with the local checkout after git pull failed.");
       }
     }
+
+    if (control.shouldStop?.()) return 130;
 
     let rebuild = config.force_rebuild || (branchWorktree && config.internet_available);
     while (true) {
       if (rebuild) {
-        const deps = await runMakeDeps(launchPath, config.quiet, logger);
+        const deps = await runMakeDeps(launchPath, config.quiet, logger, control);
         if (deps !== 0) return deps;
       }
+
+      if (control.shouldStop?.()) return 130;
 
       logger.info("launching prairielearn...");
       logger.info("--- make dev ---");
@@ -84,17 +112,26 @@ export async function launchRun(config: GitConfig, logger: Logger, interactive =
           ? await startUpstreamWatch(launchPath, logger, (signal) => terminateMake?.(signal))
           : null;
 
+      control.onState?.("starting");
       const status = await runInteractiveProcess("make", ["-C", launchPath, "dev"], {
         quiet: config.quiet,
         env: { ...withoutVirtualEnv(), FORCE_COLOR: "1" },
+        handleSignals: false,
+        onSpawn: (pid) => {
+          control.onSpawn?.(pid);
+          control.onState?.("running");
+        },
+        onOutput: (source, chunk) => control.onOutput?.(source, chunk, "server"),
         onExitRequest: (terminate) => {
           terminateMake = terminate;
+          control.onProcess?.(terminate);
         },
       });
       watcher?.stop();
 
       if (watcher?.didRestart()) {
         rebuild = true;
+        control.onState?.("preparing");
         continue;
       }
       logger.info(`make dev exited with ${status}`);
@@ -132,11 +169,20 @@ function truncateLines(value: string, maxLines = 20): string {
   return [...lines.slice(0, maxLines), `... ${omitted} more line${omitted === 1 ? "" : "s"} omitted`].join("\n");
 }
 
-async function runMakeDeps(projectPath: string, quiet: boolean, logger: Logger): Promise<number> {
+async function runMakeDeps(
+  projectPath: string,
+  quiet: boolean,
+  logger: Logger,
+  control: LaunchControl,
+): Promise<number> {
   logger.info("--- make deps ---");
   const status = await runInteractiveProcess("make", ["-C", projectPath, "deps"], {
     quiet,
     env: { ...withoutVirtualEnv(), FORCE_COLOR: "1" },
+    handleSignals: false,
+    onSpawn: control.onSpawn,
+    onExitRequest: control.onProcess,
+    onOutput: (source, chunk) => control.onOutput?.(source, chunk, "dependencies"),
   });
   if (status !== 0) logger.warn(`make deps exited with ${status}`);
   return status;

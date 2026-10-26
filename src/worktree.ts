@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { formatRelativeTime } from "./format.js";
 import { git, repoRoot } from "./git.js";
@@ -23,7 +24,7 @@ export async function createBranchWorktree(
 ): Promise<WorktreeInfo> {
   const root = await repoRoot(sourcePath);
   const slug = branchSlug(branch);
-  const worktreePath = await fs.mkdtemp(path.join("/private/tmp", `prairielearn-${slug}.`));
+  const worktreePath = await fs.mkdtemp(path.join(os.tmpdir(), `prairielearn-${slug}.`));
   const tempBranch = `prairielearn/tmp/${slug}-${path.basename(worktreePath)}`;
 
   if (online && !localOnly) {

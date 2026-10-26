@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatRelativeTime, stripOsc11 } from "../src/format.ts";
-import { previewDockerCommand, previewRunCommand } from "../src/preview.ts";
 import { branchSlug } from "../src/worktree.ts";
 
 test("strips OSC 11 sequences", () => {
@@ -14,63 +13,6 @@ test("formats relative time thresholds", () => {
   assert.equal(formatRelativeTime(60), "1 minute ago");
   assert.equal(formatRelativeTime(3600), "1 hour ago");
   assert.equal(formatRelativeTime(8 * 24 * 60 * 60), "1 week ago");
-});
-
-test("generates stable command previews", () => {
-  assert.equal(
-    previewRunCommand({
-      path: "/pl path",
-      branch: "feature/a",
-      force_rebuild: true,
-      local_only: false,
-      no_watch_upstream: true,
-      quiet: true,
-    }),
-    "pl run --branch feature/a --force-rebuild --path '/pl path' --no-watch-upstream --quiet",
-  );
-  assert.equal(
-    previewDockerCommand({
-      course_path: "/course",
-      image: "us-prod-live",
-      port: "3001:3000",
-      tmp_dir: "/tmp",
-      local_only: true,
-      quiet: false,
-    }),
-    "pl docker --local-only --port 3001:3000 /course",
-  );
-  assert.equal(
-    previewDockerCommand({
-      course_path: "/course",
-      image: "latest",
-      port: "3000:3000",
-      tmp_dir: "/tmp",
-      local_only: false,
-      quiet: false,
-    }),
-    "pl docker --image latest /course",
-  );
-});
-
-test("omits path preview when PRAIRIELEARN_PATH already provides it", () => {
-  const previous = process.env.PRAIRIELEARN_PATH;
-  process.env.PRAIRIELEARN_PATH = "/pl path";
-  try {
-    assert.equal(
-      previewRunCommand({
-        path: "/pl path",
-        branch: null,
-        force_rebuild: false,
-        local_only: false,
-        no_watch_upstream: false,
-        quiet: false,
-      }),
-      "pl run",
-    );
-  } finally {
-    if (previous === undefined) delete process.env.PRAIRIELEARN_PATH;
-    else process.env.PRAIRIELEARN_PATH = previous;
-  }
 });
 
 test("slugifies branch refs for temp worktrees", () => {

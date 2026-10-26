@@ -18,7 +18,6 @@ test("assembles docker run arguments", () => {
     quiet: false,
   }, "/tmp/pl-jobs-dir.abc"), [
     "run",
-    "-it",
     "--rm",
     "--pull=always",
     "-p",

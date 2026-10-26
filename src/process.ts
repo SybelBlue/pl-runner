@@ -51,6 +51,9 @@ export type InteractiveProcessOptions = {
   env?: NodeJS.ProcessEnv;
   quiet?: boolean;
   onExitRequest?: (terminate: (signal?: NodeJS.Signals) => void) => void;
+  onSpawn?: (pid: number | undefined) => void;
+  onOutput?: (source: "stdout" | "stderr", chunk: string) => void;
+  handleSignals?: boolean;
 };
 
 export function runInteractiveProcess(
@@ -65,6 +68,7 @@ export function runInteractiveProcess(
       detached: true,
       stdio: ["inherit", "pipe", "pipe"],
     });
+    options.onSpawn?.(child.pid);
 
     let interruptCount = 0;
     let resolved = false;
@@ -89,13 +93,14 @@ export function runInteractiveProcess(
       interruptCount += 1;
       terminate(interruptCount === 1 ? "SIGINT" : "SIGTERM");
     };
-    process.on("SIGINT", onSigint);
+    if (options.handleSignals !== false) process.on("SIGINT", onSigint);
 
-    const forward = (chunk: Buffer | string) => {
+    const forward = (source: "stdout" | "stderr", chunk: Buffer | string) => {
+      options.onOutput?.(source, String(chunk));
       if (!options.quiet) process.stdout.write(stripOsc11(String(chunk)));
     };
-    child.stdout.on("data", forward);
-    child.stderr.on("data", forward);
+    child.stdout.on("data", (chunk) => forward("stdout", chunk));
+    child.stderr.on("data", (chunk) => forward("stderr", chunk));
     child.on("error", () => {
       cleanup();
       resolved = true;
@@ -112,7 +117,7 @@ export function runInteractiveProcess(
     });
 
     function cleanup() {
-      process.off("SIGINT", onSigint);
+      if (options.handleSignals !== false) process.off("SIGINT", onSigint);
     }
   });
 }

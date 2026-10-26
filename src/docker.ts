@@ -2,13 +2,26 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { runCommand, runInteractiveProcess } from "./process.js";
-import { ask, PromptCanceled } from "./prompt.js";
 import { resolvePath, systemTmpDir, withoutVirtualEnv } from "./path.js";
 import type { DockerConfig, DockerImageTag, DockerOptions, Logger } from "./types.js";
+import type { LaunchControl } from "./run.js";
 
 export const DOCKER_IMAGE_REPOSITORY = "prairielearn/prairielearn";
 export const DEFAULT_DOCKER_IMAGE_TAG: DockerImageTag = "us-prod-live";
 export const SUPPORTED_DOCKER_IMAGE_TAGS: DockerImageTag[] = ["us-prod-live", "latest"];
+
+export type DockerImageInfo = {
+  tag: DockerImageTag;
+  updatedAt: string | null;
+};
+
+export async function dockerImageInfo(internetAvailable: boolean): Promise<DockerImageInfo[]> {
+  if (!internetAvailable) return SUPPORTED_DOCKER_IMAGE_TAGS.map((tag) => ({ tag, updatedAt: null }));
+  return Promise.all(SUPPORTED_DOCKER_IMAGE_TAGS.map(async (tag) => ({
+    tag,
+    updatedAt: await dockerTagUpdatedAt(tag),
+  })));
+}
 
 export function normalizeDockerOptions(options: Partial<Omit<DockerOptions, "image">> & { image?: string }): DockerOptions {
   return {
@@ -36,16 +49,23 @@ export async function dockerConfigFromOptions(options: Partial<DockerOptions>): 
   return { mode: "docker", ...normalizeDockerOptions(options) };
 }
 
-export async function launchDocker(options: DockerOptions, logger: Logger): Promise<number> {
+export async function launchDocker(
+  options: DockerOptions,
+  logger: Logger,
+  control: LaunchControl = {},
+): Promise<number> {
+  control.onState?.("preparing");
   const coursePath = resolvePath(options.course_path);
   const tmpDir = resolvePath(options.tmp_dir);
 
   if (!(await isDirectory(coursePath))) {
     logger.error(`${coursePath} is not a directory.`);
+    control.onFailure?.("INVALID_CONFIG", `${coursePath} is not a directory`);
     return 1;
   }
   if (!(await isDirectory(tmpDir))) {
     logger.error(`${tmpDir} is not a directory.`);
+    control.onFailure?.("INVALID_CONFIG", `${tmpDir} is not a directory`);
     return 1;
   }
 
@@ -57,7 +77,11 @@ export async function launchDocker(options: DockerOptions, logger: Logger): Prom
   const info = await runCommand("docker", ["info"]);
   if (info.status !== 0) {
     logger.error("Docker is installed, but the Docker daemon is not running.");
-    const startStatus = await promptAndRunDockerDaemonStartCommand(options.quiet, logger);
+    if (!control.startDockerDaemon) {
+      control.onFailure?.("DOCKER_DAEMON_UNAVAILABLE", "Docker daemon is not running");
+      return 1;
+    }
+    const startStatus = await startDockerDaemon(options.quiet, logger, process.platform, control);
     if (startStatus !== 0) return startStatus;
     if (!(await waitForDockerDaemon(options.quiet))) {
       logger.warn("Docker daemon is still unavailable. Try again once Docker finishes starting.");
@@ -65,25 +89,37 @@ export async function launchDocker(options: DockerOptions, logger: Logger): Prom
       return 1;
     }
   }
+  if (control.shouldStop?.()) return 130;
 
   const preLaunchImageIds = await prairielearnImageIds();
   const jobsDir = await fs.mkdtemp(path.join(tmpDir, "pl-jobs-dir."));
-  const args = dockerRunArgs({ ...options, course_path: coursePath, tmp_dir: tmpDir }, jobsDir);
-  logger.info("--- docker run ---");
-  const status = await runInteractiveProcess("docker", args, {
-    quiet: options.quiet,
-    env: withoutVirtualEnv(),
-  });
-  logger.info("--- docker run ---");
-  (status !== 0 ? logger.warn : logger.info)(`docker run exited with ${status}`);
-  await cleanupFormerPrairieLearnImages(preLaunchImageIds, options.quiet, logger);
-  return status;
+  try {
+    const args = dockerRunArgs({ ...options, course_path: coursePath, tmp_dir: tmpDir }, jobsDir);
+    logger.info("--- docker run ---");
+    control.onState?.("starting");
+    const status = await runInteractiveProcess("docker", args, {
+      quiet: options.quiet,
+      env: withoutVirtualEnv(),
+      handleSignals: false,
+      onSpawn: (pid) => {
+        control.onSpawn?.(pid);
+        control.onState?.("running");
+      },
+      onExitRequest: control.onProcess,
+      onOutput: (source, chunk) => control.onOutput?.(source, chunk, "server"),
+    });
+    logger.info("--- docker run ---");
+    (status !== 0 ? logger.warn : logger.info)(`docker run exited with ${status}`);
+    await cleanupFormerPrairieLearnImages(preLaunchImageIds, options.quiet, logger, control);
+    return status;
+  } finally {
+    await fs.rm(jobsDir, { recursive: true, force: true });
+  }
 }
 
 export function dockerRunArgs(options: DockerOptions, jobsDir: string): string[] {
   return [
     "run",
-    "-it",
     "--rm",
     `--pull=${options.local_only ? "never" : "always"}`,
     "-p",
@@ -112,24 +148,22 @@ export function shellCommand(command: string, platform: NodeJS.Platform = proces
   return { command: "sh", args: ["-lc", command] };
 }
 
-async function promptAndRunDockerDaemonStartCommand(quiet: boolean, logger: Logger): Promise<number> {
-  let command: string;
-  try {
-    command = await ask("Start Docker daemon", dockerDaemonStartCommand(), "Enter to run, Esc/Ctrl+C to cancel");
-  } catch (error) {
-    if (error instanceof PromptCanceled) return 130;
-    throw error;
-  }
-  if (!command) {
-    logger.warn("Docker daemon start canceled.");
-    return 1;
-  }
-
+export async function startDockerDaemon(
+  quiet: boolean,
+  logger: Logger,
+  platform: NodeJS.Platform = process.platform,
+  control: LaunchControl = {},
+): Promise<number> {
+  const command = dockerDaemonStartCommand(platform);
   const shell = shellCommand(command);
   logger.info(`running: ${command}`);
   return runInteractiveProcess(shell.command, shell.args, {
     quiet,
     env: withoutVirtualEnv(),
+    handleSignals: false,
+    onSpawn: control.onSpawn,
+    onExitRequest: control.onProcess,
+    onOutput: (source, chunk) => control.onOutput?.(source, chunk, "docker-daemon"),
   });
 }
 
@@ -157,7 +191,12 @@ export function formerPrairieLearnDanglingImageIds(before: string[], current: st
   return [...new Set(before)].filter((id) => !currentIds.has(id) && untaggedIds.has(id));
 }
 
-async function cleanupFormerPrairieLearnImages(beforeImageIds: string[], quiet: boolean, logger: Logger): Promise<void> {
+async function cleanupFormerPrairieLearnImages(
+  beforeImageIds: string[],
+  quiet: boolean,
+  logger: Logger,
+  control: LaunchControl,
+): Promise<void> {
   const currentImageIds = await prairielearnImageIds();
   const untaggedImageIds = await untaggedDockerImageIds(beforeImageIds);
   const cleanupIds = formerPrairieLearnDanglingImageIds(beforeImageIds, currentImageIds, untaggedImageIds);
@@ -167,6 +206,10 @@ async function cleanupFormerPrairieLearnImages(beforeImageIds: string[], quiet: 
   const status = await runInteractiveProcess("docker", ["image", "rm", ...cleanupIds], {
     quiet,
     env: withoutVirtualEnv(),
+    handleSignals: false,
+    onSpawn: control.onSpawn,
+    onExitRequest: control.onProcess,
+    onOutput: (source, chunk) => control.onOutput?.(source, chunk, "cleanup"),
   });
   if (status !== 0) logger.warn(`docker image rm exited with ${status}`);
 }
@@ -204,6 +247,21 @@ async function imageIsUntagged(id: string): Promise<boolean> {
     return !Array.isArray(tags) || tags.length === 0 || tags.every((tag) => tag === "<none>:<none>");
   } catch {
     return false;
+  }
+}
+
+async function dockerTagUpdatedAt(tag: DockerImageTag): Promise<string | null> {
+  try {
+    const response = await fetch(`https://hub.docker.com/v2/repositories/${DOCKER_IMAGE_REPOSITORY}/tags/${tag}`, {
+      signal: AbortSignal.timeout(2500),
+    });
+    if (!response.ok) return null;
+    const body = await response.json() as { last_updated?: unknown };
+    if (typeof body.last_updated !== "string") return null;
+    const updated = new Date(body.last_updated);
+    return Number.isNaN(updated.getTime()) ? null : updated.toISOString();
+  } catch {
+    return null;
   }
 }
 
