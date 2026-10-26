@@ -5,12 +5,28 @@ import net from "node:net";
 import { checkPreflightDependencies } from "../system/deps.js";
 import { dockerImageInfo, startDockerDaemon } from "../worker/docker.js";
 import { nodeEntrypoint } from "../system/entrypoint.js";
-import { omitDependencyPackageChanges, readEvents } from "../worker/event-log.js";
-import { currentBranch, localBranches, remoteOnlyBranches, validateProjectPath } from "../system/git.js";
+import {
+  omitDependencyPackageChanges,
+  readEvents,
+} from "../worker/event-log.js";
+import {
+  currentBranch,
+  localBranches,
+  remoteOnlyBranches,
+  validateProjectPath,
+} from "../system/git.js";
 import { hasInternet } from "../system/internet.js";
-import { instanceNameKey, instanceStatus, isActive } from "../core/instances.js";
+import {
+  instanceNameKey,
+  instanceStatus,
+  isActive,
+} from "../core/instances.js";
 import { createLogger } from "../system/logger.js";
-import { ensurePrivateDirectory, runDirectory, workerSocketPath } from "../system/paths.js";
+import {
+  ensurePrivateDirectory,
+  runDirectory,
+  workerSocketPath,
+} from "../system/paths.js";
 import {
   PROTOCOL_VERSION,
   WORKER_PROTOCOL_VERSION,
@@ -47,9 +63,15 @@ type SupervisorPersistence = {
   load(): Promise<SupervisorState>;
   save(state: SupervisorState): Promise<void>;
   loadWorker(runDir: string): Promise<WorkerState | null>;
-  prepareRun(runId: string): Promise<{ runDir: string; workerSocket: string; requestFile: string }>;
+  prepareRun(
+    runId: string,
+  ): Promise<{ runDir: string; workerSocket: string; requestFile: string }>;
   writeWorkerRequest(file: string, request: WorkerRequest): Promise<void>;
-  readEvents(runDir: string, limit: number, afterSeq: number): Promise<RunEvent[]>;
+  readEvents(
+    runDir: string,
+    limit: number,
+    afterSeq: number,
+  ): Promise<RunEvent[]>;
   prune(state: SupervisorState, retainedCompletedRuns: number): Promise<void>;
   deleteRuns(instance: InstanceRecord): Promise<void>;
   historicalRunDirectory(runId: string): string;
@@ -57,8 +79,14 @@ type SupervisorPersistence = {
 
 type SupervisorWorkers = {
   spawn(requestFile: string): number;
-  request(socketPath: string, type: "worker.status" | "worker.stop"): Promise<unknown>;
-  waitForTerminal(runDir: string, timeoutMs: number): Promise<WorkerState | null>;
+  request(
+    socketPath: string,
+    type: "worker.status" | "worker.stop",
+  ): Promise<unknown>;
+  waitForTerminal(
+    runDir: string,
+    timeoutMs: number,
+  ): Promise<WorkerState | null>;
 };
 
 type SupervisorHost = {
@@ -132,14 +160,18 @@ export class Supervisor {
     });
   }
 
-  getInstance(input: BackendPayload<"instance.get">): Promise<BackendResult<"instance.get">> {
+  getInstance(
+    input: BackendPayload<"instance.get">,
+  ): Promise<BackendResult<"instance.get">> {
     return this.enqueue(async () => {
       await this.refreshUnlocked();
       return instanceStatus(this.requireInstance(input.instanceId));
     });
   }
 
-  createInstance(input: BackendPayload<"instance.create">): Promise<BackendResult<"instance.create">> {
+  createInstance(
+    input: BackendPayload<"instance.create">,
+  ): Promise<BackendResult<"instance.create">> {
     return this.enqueue(async () => {
       const name = this.parseInstanceName(input.name);
       const config = this.parseConfig(input.config);
@@ -157,12 +189,17 @@ export class Supervisor {
     });
   }
 
-  updateInstance(input: BackendPayload<"instance.update">): Promise<BackendResult<"instance.update">> {
+  updateInstance(
+    input: BackendPayload<"instance.update">,
+  ): Promise<BackendResult<"instance.update">> {
     return this.enqueue(async () => {
       await this.refreshUnlocked();
       const instance = this.requireInstance(input.instanceId);
       if (instance.currentRun && isActive(instance.currentRun.state)) {
-        throw new SupervisorError("ACTIVE_INSTANCE_CONFLICT", "an active instance cannot be configured");
+        throw new SupervisorError(
+          "ACTIVE_INSTANCE_CONFLICT",
+          "an active instance cannot be configured",
+        );
       }
       const name = this.parseInstanceName(input.name);
       const config = this.parseConfig(input.config);
@@ -174,35 +211,48 @@ export class Supervisor {
     });
   }
 
-  deleteInstance(input: BackendPayload<"instance.delete">): Promise<BackendResult<"instance.delete">> {
+  deleteInstance(
+    input: BackendPayload<"instance.delete">,
+  ): Promise<BackendResult<"instance.delete">> {
     return this.enqueue(async () => {
       await this.refreshUnlocked();
       const instance = this.requireInstance(input.instanceId);
       if (instance.currentRun && isActive(instance.currentRun.state)) {
-        throw new SupervisorError("ACTIVE_INSTANCE_CONFLICT", "stop the instance before deleting it");
+        throw new SupervisorError(
+          "ACTIVE_INSTANCE_CONFLICT",
+          "stop the instance before deleting it",
+        );
       }
-      this.state.instances = this.state.instances.filter((candidate) => candidate.id !== instance.id);
+      this.state.instances = this.state.instances.filter(
+        (candidate) => candidate.id !== instance.id,
+      );
       await this.dependencies.persistence.save(this.state);
       await this.dependencies.persistence.deleteRuns(instance);
       return { deletedId: instance.id };
     });
   }
 
-  startInstance(input: BackendPayload<"instance.start">): Promise<BackendResult<"instance.start">> {
+  startInstance(
+    input: BackendPayload<"instance.start">,
+  ): Promise<BackendResult<"instance.start">> {
     return this.enqueue(async () => {
       await this.refreshUnlocked();
       return this.startUnlocked(input);
     });
   }
 
-  stopInstance(input: BackendPayload<"instance.stop">): Promise<BackendResult<"instance.stop">> {
+  stopInstance(
+    input: BackendPayload<"instance.stop">,
+  ): Promise<BackendResult<"instance.stop">> {
     return this.enqueue(async () => {
       await this.refreshUnlocked();
       return this.stopUnlocked(input.instanceId);
     });
   }
 
-  restartInstance(input: BackendPayload<"instance.restart">): Promise<BackendResult<"instance.restart">> {
+  restartInstance(
+    input: BackendPayload<"instance.restart">,
+  ): Promise<BackendResult<"instance.restart">> {
     return this.enqueue(async () => {
       await this.refreshUnlocked();
       const instance = this.requireInstance(input.instanceId);
@@ -222,120 +272,172 @@ export class Supervisor {
     });
   }
 
-  inspectHost(input: BackendPayload<"host.inspect">): Promise<BackendResult<"host.inspect">> {
+  inspectHost(
+    input: BackendPayload<"host.inspect">,
+  ): Promise<BackendResult<"host.inspect">> {
     return this.dependencies.host.inspect(input);
   }
 
-  async tailLogs(input: BackendPayload<"logs.tail">): Promise<BackendResult<"logs.tail">> {
+  async tailLogs(
+    input: BackendPayload<"logs.tail">,
+  ): Promise<BackendResult<"logs.tail">> {
     const target = await this.resolveLogTarget(input);
     if (!target) return [];
     const limit = Math.min(1_000, Math.max(1, numberValue(input.limit, 200)));
     const afterSeq = numberValue(input.afterSeq, 0);
     const events = omitDependencyPackageChanges(
-      await this.dependencies.persistence.readEvents(target.runDir, 1_000, afterSeq),
+      await this.dependencies.persistence.readEvents(
+        target.runDir,
+        1_000,
+        afterSeq,
+      ),
     );
-    const filtered = input.stream === "stdout" || input.stream === "stderr"
-      ? events.filter((event) => event.source === input.stream || event.source === "system")
-      : events;
+    const filtered =
+      input.stream === "stdout" || input.stream === "stderr"
+        ? events.filter(
+            (event) =>
+              event.source === input.stream || event.source === "system",
+          )
+        : events;
     return filtered.slice(-limit);
   }
 
   resolveLogTarget(
     input: Pick<BackendPayload<"logs.tail">, "instanceId" | "runId">,
   ): Promise<LogTarget | null> {
-    return this.enqueue(() => Promise.resolve(this.resolveLogTargetUnlocked(input)));
+    return this.enqueue(() =>
+      Promise.resolve(this.resolveLogTargetUnlocked(input)),
+    );
   }
 
   startDockerDaemon(): Promise<BackendResult<"docker.startDaemon">> {
-    return this.dependencies.host.startDockerDaemon().then((exitCode) => ({ exitCode }));
+    return this.dependencies.host
+      .startDockerDaemon()
+      .then((exitCode) => ({ exitCode }));
   }
 
   shutdown(): Promise<BackendResult<"backend.shutdown">> {
-    return this.enqueue(() => Promise.resolve({
-      accepted: true as const,
-      activeInstancesPreserved: this.state.instances.filter((instance) => (
-        instance.currentRun && isActive(instance.currentRun.state)
-      )).length,
-    }));
+    return this.enqueue(() =>
+      Promise.resolve({
+        accepted: true as const,
+        activeInstancesPreserved: this.state.instances.filter(
+          (instance) =>
+            instance.currentRun && isActive(instance.currentRun.state),
+        ).length,
+      }),
+    );
   }
 
   private enqueue<T>(action: () => Promise<T>): Promise<T> {
     const result = this.stateQueue.then(action, action);
-    this.stateQueue = result.then(() => undefined, () => undefined);
+    this.stateQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
   }
 
   private async refreshUnlocked(): Promise<void> {
-    const refreshed = await Promise.all(this.state.instances.map(async (instance) => {
-      const current = instance.currentRun;
-      if (!current) return { instanceId: instance.id, runId: null, run: null, changed: false };
-      const workerState = await this.dependencies.persistence.loadWorker(current.runDir);
-      if (workerState) {
-        if (isActive(workerState.state)) {
-          try {
-            const liveState = await this.dependencies.workers.request(
-              current.workerSocket,
-              "worker.status",
-            ) as WorkerState;
-            Object.assign(workerState, liveState);
-          } catch {
-            const age = this.dependencies.now().getTime() - new Date(workerState.updatedAt).getTime();
-            if (age > 3_000) {
-              Object.assign(workerState, {
-                state: "failed",
-                updatedAt: this.nowIso(),
-                errorCode: "WORKER_RECOVERY_FAILED",
-                errorMessage: "the durable worker is no longer reachable",
-              } satisfies Partial<WorkerState>);
+    const refreshed = await Promise.all(
+      this.state.instances.map(async (instance) => {
+        const current = instance.currentRun;
+        if (!current)
+          return {
+            instanceId: instance.id,
+            runId: null,
+            run: null,
+            changed: false,
+          };
+        const workerState = await this.dependencies.persistence.loadWorker(
+          current.runDir,
+        );
+        if (workerState) {
+          if (isActive(workerState.state)) {
+            try {
+              const liveState = (await this.dependencies.workers.request(
+                current.workerSocket,
+                "worker.status",
+              )) as WorkerState;
+              Object.assign(workerState, liveState);
+            } catch {
+              const age =
+                this.dependencies.now().getTime() -
+                new Date(workerState.updatedAt).getTime();
+              if (age > 3_000) {
+                Object.assign(workerState, {
+                  state: "failed",
+                  updatedAt: this.nowIso(),
+                  errorCode: "WORKER_RECOVERY_FAILED",
+                  errorMessage: "the durable worker is no longer reachable",
+                } satisfies Partial<WorkerState>);
+              }
             }
           }
-        }
-        const nextRun = { ...current, ...workerState };
-        return {
-          instanceId: instance.id,
-          runId: current.runId,
-          run: nextRun,
-          changed: JSON.stringify(stripConfig(nextRun)) !== JSON.stringify(stripConfig(current)),
-        };
-      }
-      if (isActive(current.state)) {
-        const age = this.dependencies.now().getTime() - new Date(current.updatedAt).getTime();
-        if (age > 3_000) {
+          const nextRun = { ...current, ...workerState };
           return {
             instanceId: instance.id,
             runId: current.runId,
-            run: {
-              ...current,
-              state: "failed" as const,
-              updatedAt: this.nowIso(),
-              errorCode: "WORKER_RECOVERY_FAILED",
-              errorMessage: "the durable worker is no longer reachable",
-            },
-            changed: true,
+            run: nextRun,
+            changed:
+              JSON.stringify(stripConfig(nextRun)) !==
+              JSON.stringify(stripConfig(current)),
           };
         }
-      }
-      return { instanceId: instance.id, runId: current.runId, run: current, changed: false };
-    }));
+        if (isActive(current.state)) {
+          const age =
+            this.dependencies.now().getTime() -
+            new Date(current.updatedAt).getTime();
+          if (age > 3_000) {
+            return {
+              instanceId: instance.id,
+              runId: current.runId,
+              run: {
+                ...current,
+                state: "failed" as const,
+                updatedAt: this.nowIso(),
+                errorCode: "WORKER_RECOVERY_FAILED",
+                errorMessage: "the durable worker is no longer reachable",
+              },
+              changed: true,
+            };
+          }
+        }
+        return {
+          instanceId: instance.id,
+          runId: current.runId,
+          run: current,
+          changed: false,
+        };
+      }),
+    );
     if (!refreshed.some((item) => item.changed)) return;
     for (const item of refreshed) {
       if (!item.changed || !item.runId || !item.run) continue;
-      const currentInstance = this.state.instances.find((instance) => instance.id === item.instanceId);
-      if (currentInstance?.currentRun?.runId === item.runId) currentInstance.currentRun = item.run;
+      const currentInstance = this.state.instances.find(
+        (instance) => instance.id === item.instanceId,
+      );
+      if (currentInstance?.currentRun?.runId === item.runId)
+        currentInstance.currentRun = item.run;
     }
     await this.dependencies.persistence.save(this.state);
   }
 
   private async startUnlocked(
-    input: BackendPayload<"instance.start"> | BackendPayload<"instance.restart">,
+    input:
+      BackendPayload<"instance.start"> | BackendPayload<"instance.restart">,
   ): Promise<RunRecord> {
     const instance = this.requireInstance(input.instanceId);
-    if (instance.currentRun && isActive(instance.currentRun.state)) return instance.currentRun;
+    if (instance.currentRun && isActive(instance.currentRun.state))
+      return instance.currentRun;
     if (!(await this.dependencies.host.portIsAvailable(instance.config.port))) {
-      throw new SupervisorError("PORT_IN_USE", `port ${instance.config.port} is already in use`, {
-        instanceId: instance.id,
-        port: instance.config.port,
-      });
+      throw new SupervisorError(
+        "PORT_IN_USE",
+        `port ${instance.config.port} is already in use`,
+        {
+          instanceId: instance.id,
+          port: instance.config.port,
+        },
+      );
     }
 
     if (instance.currentRun) instance.history.push(instance.currentRun.runId);
@@ -352,7 +454,10 @@ export class Supervisor {
       allowPullFailure: input.allowPullFailure === true,
       startDockerDaemon: input.startDockerDaemon === true,
     };
-    await this.dependencies.persistence.writeWorkerRequest(location.requestFile, workerRequest);
+    await this.dependencies.persistence.writeWorkerRequest(
+      location.requestFile,
+      workerRequest,
+    );
     const record: RunRecord = {
       instanceId: instance.id,
       runId,
@@ -383,13 +488,19 @@ export class Supervisor {
     const instance = this.requireInstance(instanceId);
     const current = instance.currentRun;
     if (!current || !isActive(current.state)) return current;
-    await this.dependencies.workers.request(current.workerSocket, "worker.stop").catch((error) => {
-      throw new SupervisorError(
-        "WORKER_RECOVERY_FAILED",
-        error instanceof Error ? error.message : String(error),
-      );
-    });
-    instance.currentRun = { ...current, state: "stopping", updatedAt: this.nowIso() };
+    await this.dependencies.workers
+      .request(current.workerSocket, "worker.stop")
+      .catch((error) => {
+        throw new SupervisorError(
+          "WORKER_RECOVERY_FAILED",
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    instance.currentRun = {
+      ...current,
+      state: "stopping",
+      updatedAt: this.nowIso(),
+    };
     await this.dependencies.persistence.save(this.state);
     return instance.currentRun;
   }
@@ -400,17 +511,30 @@ export class Supervisor {
     const instance = this.requireInstance(input.instanceId);
     if (!input.runId) {
       return instance.currentRun
-        ? { instanceId: instance.id, runId: instance.currentRun.runId, runDir: instance.currentRun.runDir }
+        ? {
+            instanceId: instance.id,
+            runId: instance.currentRun.runId,
+            runDir: instance.currentRun.runDir,
+          }
         : null;
     }
     if (instance.currentRun?.runId === input.runId) {
-      return { instanceId: instance.id, runId: input.runId, runDir: instance.currentRun.runDir };
-    }
-    if (instance.history.includes(input.runId) && /^[A-Za-z0-9-]+$/.test(input.runId)) {
       return {
         instanceId: instance.id,
         runId: input.runId,
-        runDir: this.dependencies.persistence.historicalRunDirectory(input.runId),
+        runDir: instance.currentRun.runDir,
+      };
+    }
+    if (
+      instance.history.includes(input.runId) &&
+      /^[A-Za-z0-9-]+$/.test(input.runId)
+    ) {
+      return {
+        instanceId: instance.id,
+        runId: input.runId,
+        runDir: this.dependencies.persistence.historicalRunDirectory(
+          input.runId,
+        ),
       };
     }
     throw new SupervisorError(
@@ -420,15 +544,27 @@ export class Supervisor {
   }
 
   private requireInstance(instanceId: string): InstanceRecord {
-    const instance = this.state.instances.find((candidate) => candidate.id === instanceId);
-    if (!instance) throw new SupervisorError("INSTANCE_NOT_FOUND", `instance not found: ${instanceId}`);
+    const instance = this.state.instances.find(
+      (candidate) => candidate.id === instanceId,
+    );
+    if (!instance)
+      throw new SupervisorError(
+        "INSTANCE_NOT_FOUND",
+        `instance not found: ${instanceId}`,
+      );
     return instance;
   }
 
-  private assertUniqueProfile(name: string, config: LaunchConfig, excludeId?: string): void {
-    const sameName = this.state.instances.find((instance) => (
-      instance.id !== excludeId && instanceNameKey(instance.name) === instanceNameKey(name)
-    ));
+  private assertUniqueProfile(
+    name: string,
+    config: LaunchConfig,
+    excludeId?: string,
+  ): void {
+    const sameName = this.state.instances.find(
+      (instance) =>
+        instance.id !== excludeId &&
+        instanceNameKey(instance.name) === instanceNameKey(name),
+    );
     if (sameName) {
       throw new SupervisorError(
         "INSTANCE_NAME_CONFLICT",
@@ -436,14 +572,19 @@ export class Supervisor {
         { instanceId: sameName.id },
       );
     }
-    const samePort = this.state.instances.find((instance) => (
-      instance.id !== excludeId && instance.config.port === config.port
-    ));
+    const samePort = this.state.instances.find(
+      (instance) =>
+        instance.id !== excludeId && instance.config.port === config.port,
+    );
     if (samePort) {
-      throw new SupervisorError("PORT_CONFLICT", `port ${config.port} is assigned to instance ${samePort.name}`, {
-        instanceId: samePort.id,
-        port: config.port,
-      });
+      throw new SupervisorError(
+        "PORT_CONFLICT",
+        `port ${config.port} is assigned to instance ${samePort.name}`,
+        {
+          instanceId: samePort.id,
+          port: config.port,
+        },
+      );
     }
   }
 
@@ -451,7 +592,10 @@ export class Supervisor {
     try {
       return instanceNameSchema.parse(value);
     } catch (error) {
-      throw new SupervisorError("INVALID_CONFIG", error instanceof Error ? error.message : String(error));
+      throw new SupervisorError(
+        "INVALID_CONFIG",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 
@@ -459,7 +603,10 @@ export class Supervisor {
     try {
       return parseLaunchConfig(value);
     } catch (error) {
-      throw new SupervisorError("INVALID_CONFIG", error instanceof Error ? error.message : String(error));
+      throw new SupervisorError(
+        "INVALID_CONFIG",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 
@@ -483,13 +630,14 @@ function defaultDependencies(env: NodeJS.ProcessEnv): SupervisorDependencies {
           requestFile: workerRequestFile(runDir),
         };
       },
-      writeWorkerRequest: (file, request) => fs.writeFile(
-        file,
-        `${JSON.stringify(request, null, 2)}\n`,
-        { mode: 0o600 },
-      ),
-      readEvents: (runDir, limit, afterSeq) => readEvents(eventLogFile(runDir), limit, afterSeq),
-      prune: (state, retainedCompletedRuns) => pruneRunHistory(state, env, retainedCompletedRuns),
+      writeWorkerRequest: (file, request) =>
+        fs.writeFile(file, `${JSON.stringify(request, null, 2)}\n`, {
+          mode: 0o600,
+        }),
+      readEvents: (runDir, limit, afterSeq) =>
+        readEvents(eventLogFile(runDir), limit, afterSeq),
+      prune: (state, retainedCompletedRuns) =>
+        pruneRunHistory(state, env, retainedCompletedRuns),
       deleteRuns: (instance) => deleteInstanceRuns(instance, env),
       historicalRunDirectory: (runId) => runDirectory(runId, env),
     },
@@ -518,10 +666,20 @@ function defaultDependencies(env: NodeJS.ProcessEnv): SupervisorDependencies {
   };
 }
 
-async function inspectHost(input: BackendPayload<"host.inspect">): Promise<HostInspection> {
-  const [dependencies, internetAvailable] = await Promise.all([checkPreflightDependencies(), hasInternet()]);
-  const dockerImages = input.mode === "docker" ? await dockerImageInfo(internetAvailable) : [];
-  const result: HostInspection = { dependencies, internetAvailable, dockerImages };
+async function inspectHost(
+  input: BackendPayload<"host.inspect">,
+): Promise<HostInspection> {
+  const [dependencies, internetAvailable] = await Promise.all([
+    checkPreflightDependencies(),
+    hasInternet(),
+  ]);
+  const dockerImages =
+    input.mode === "docker" ? await dockerImageInfo(internetAvailable) : [];
+  const result: HostInspection = {
+    dependencies,
+    internetAvailable,
+    dockerImages,
+  };
   if (input.path) {
     const warnings: string[] = [];
     const logger = {
@@ -535,7 +693,9 @@ async function inspectHost(input: BackendPayload<"host.inspect">): Promise<HostI
       const [current, local, remote] = await Promise.all([
         currentBranch(input.path),
         localBranches(input.path),
-        internetAvailable ? remoteOnlyBranches(input.path) : Promise.resolve([]),
+        internetAvailable
+          ? remoteOnlyBranches(input.path)
+          : Promise.resolve([]),
       ]);
       result.currentBranch = current;
       result.localBranches = local;
@@ -545,7 +705,10 @@ async function inspectHost(input: BackendPayload<"host.inspect">): Promise<HostI
   return result;
 }
 
-function requestWorker(socketPath: string, type: "worker.status" | "worker.stop"): Promise<unknown> {
+function requestWorker(
+  socketPath: string,
+  type: "worker.status" | "worker.stop",
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(socketPath);
     const id = randomUUID();
@@ -563,9 +726,15 @@ function requestWorker(socketPath: string, type: "worker.status" | "worker.stop"
     }, 1_000);
     socket.setEncoding("utf8");
     socket.once("error", (error) => finish(() => reject(error)));
-    socket.once("close", () => finish(() => reject(new Error("worker closed the connection without a response"))));
+    socket.once("close", () =>
+      finish(() =>
+        reject(new Error("worker closed the connection without a response")),
+      ),
+    );
     socket.once("connect", () => {
-      socket.write(`${JSON.stringify({ protocol: WORKER_PROTOCOL_VERSION, id, type, payload: {} })}\n`);
+      socket.write(
+        `${JSON.stringify({ protocol: WORKER_PROTOCOL_VERSION, id, type, payload: {} })}\n`,
+      );
     });
     socket.on("data", (chunk: string) => {
       buffer += chunk;
@@ -578,12 +747,18 @@ function requestWorker(socketPath: string, type: "worker.status" | "worker.stop"
       };
       socket.end();
       if (response.ok) finish(() => resolve(response.result));
-      else finish(() => reject(new Error(response.error?.message ?? "worker request failed")));
+      else
+        finish(() =>
+          reject(new Error(response.error?.message ?? "worker request failed")),
+        );
     });
   });
 }
 
-async function waitForTerminal(runDir: string, timeoutMs: number): Promise<WorkerState | null> {
+async function waitForTerminal(
+  runDir: string,
+  timeoutMs: number,
+): Promise<WorkerState | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const state = await loadWorkerState(runDir);
@@ -603,8 +778,10 @@ function addressPortIsAvailable(port: number, host: string): Promise<boolean> {
     const server = net.createServer();
     server.unref();
     server.once("error", (error: NodeJS.ErrnoException) => {
-      if (error.code === "EADDRINUSE" || error.code === "EACCES") resolve(false);
-      else if (error.code === "EAFNOSUPPORT" || error.code === "EADDRNOTAVAIL") resolve(true);
+      if (error.code === "EADDRINUSE" || error.code === "EACCES")
+        resolve(false);
+      else if (error.code === "EAFNOSUPPORT" || error.code === "EADDRNOTAVAIL")
+        resolve(true);
       else reject(error);
     });
     server.listen({ port, host, exclusive: true }, () => {

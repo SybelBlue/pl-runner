@@ -37,14 +37,23 @@ test("git pull failure is typed and requires an explicit override", async () => 
   const project = path.join(directory, "project");
   await Promise.all([fs.mkdir(bin), fs.mkdir(project)]);
   await fs.writeFile(path.join(project, "Makefile"), "dev:\n\t@true\n");
-  await fs.writeFile(path.join(bin, "git"), `#!/bin/sh
+  await fs.writeFile(
+    path.join(bin, "git"),
+    `#!/bin/sh
 if [ "$1" = "rev-parse" ]; then echo true; exit 0; fi
 if [ "$1" = "remote" ]; then echo 'origin https://github.com/PrairieLearn/PrairieLearn.git'; exit 0; fi
 if [ "$1" = "pull" ]; then echo 'pull failed' >&2; exit 42; fi
 exit 0
-`);
-  await fs.writeFile(path.join(bin, "make"), "#!/bin/sh\necho server-ready\nexit 0\n");
-  await Promise.all([fs.chmod(path.join(bin, "git"), 0o755), fs.chmod(path.join(bin, "make"), 0o755)]);
+`,
+  );
+  await fs.writeFile(
+    path.join(bin, "make"),
+    "#!/bin/sh\necho server-ready\nexit 0\n",
+  );
+  await Promise.all([
+    fs.chmod(path.join(bin, "git"), 0o755),
+    fs.chmod(path.join(bin, "make"), 0o755),
+  ]);
 
   const previousPath = process.env.PATH;
   process.env.PATH = `${bin}:${previousPath ?? ""}`;
@@ -62,9 +71,19 @@ exit 0
   };
   try {
     let failure: string | null = null;
-    assert.equal(await launchRun(config, logger, false, { onFailure: (code) => { failure = code; } }), 42);
+    assert.equal(
+      await launchRun(config, logger, false, {
+        onFailure: (code) => {
+          failure = code;
+        },
+      }),
+      42,
+    );
     assert.equal(failure, "PULL_FAILED");
-    assert.equal(await launchRun(config, logger, false, { allowPullFailure: true }), 0);
+    assert.equal(
+      await launchRun(config, logger, false, { allowPullFailure: true }),
+      0,
+    );
   } finally {
     if (previousPath === undefined) delete process.env.PATH;
     else process.env.PATH = previousPath;
@@ -73,24 +92,38 @@ exit 0
 });
 
 test("managed Git runs launch with a generated port override", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pl-run-port-test-"));
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "pl-run-port-test-"),
+  );
   const bin = path.join(directory, "bin");
   const project = path.join(directory, "project");
   const runDir = path.join(directory, "run");
   const marker = path.join(directory, "config-path");
   await Promise.all([fs.mkdir(bin), fs.mkdir(project), fs.mkdir(runDir)]);
   await fs.writeFile(path.join(project, "Makefile"), "dev:\n\t@true\n");
-  await fs.writeFile(path.join(project, "config.json"), JSON.stringify({ authName: "Local User" }));
-  await fs.writeFile(path.join(bin, "git"), `#!/bin/sh
+  await fs.writeFile(
+    path.join(project, "config.json"),
+    JSON.stringify({ authName: "Local User" }),
+  );
+  await fs.writeFile(
+    path.join(bin, "git"),
+    `#!/bin/sh
 if [ "$1" = "rev-parse" ]; then echo true; exit 0; fi
 if [ "$1" = "remote" ]; then echo 'origin https://github.com/PrairieLearn/PrairieLearn.git'; exit 0; fi
 exit 0
-`);
-  await fs.writeFile(path.join(bin, "make"), `#!/bin/sh
+`,
+  );
+  await fs.writeFile(
+    path.join(bin, "make"),
+    `#!/bin/sh
 printf '%s' "$PL_CONFIG_PATH" > ${JSON.stringify(marker)}
 exit 0
-`);
-  await Promise.all([fs.chmod(path.join(bin, "git"), 0o755), fs.chmod(path.join(bin, "make"), 0o755)]);
+`,
+  );
+  await Promise.all([
+    fs.chmod(path.join(bin, "git"), 0o755),
+    fs.chmod(path.join(bin, "make"), 0o755),
+  ]);
 
   const previousPath = process.env.PATH;
   process.env.PATH = `${bin}:${previousPath ?? ""}`;
@@ -107,13 +140,24 @@ exit 0
     quiet: true,
   };
   try {
-    assert.equal(await launchRun(config, logger, false, {}, {
-      instanceId: "instance-a",
-      runDir,
-      env: process.env,
-    }), 0);
+    assert.equal(
+      await launchRun(
+        config,
+        logger,
+        false,
+        {},
+        {
+          instanceId: "instance-a",
+          runDir,
+          env: process.env,
+        },
+      ),
+      0,
+    );
     const configPath = await fs.readFile(marker, "utf8");
-    const effective = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+    const effective = JSON.parse(
+      await fs.readFile(configPath, "utf8"),
+    ) as Record<string, unknown>;
     assert.equal(effective.serverPort, "3111");
     assert.equal(effective.authName, "Local User");
   } finally {

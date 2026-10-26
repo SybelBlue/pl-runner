@@ -1,6 +1,15 @@
-import type { InstanceRecord, InstanceStatus, LifecycleState } from "./types.js";
+import type {
+  InstanceRecord,
+  InstanceStatus,
+  LifecycleState,
+} from "./types.js";
 
-const ACTIVE_STATES = new Set<LifecycleState>(["preparing", "starting", "running", "stopping"]);
+const ACTIVE_STATES = new Set<LifecycleState>([
+  "preparing",
+  "starting",
+  "running",
+  "stopping",
+]);
 
 export function isActive(state: LifecycleState): boolean {
   return ACTIVE_STATES.has(state);
@@ -23,7 +32,10 @@ export function isStartEligible(instance: InstanceStatus): boolean {
 }
 
 export function isRestartEligible(instance: InstanceStatus): boolean {
-  return Boolean(instance.run && (isActive(instance.run.state) || instance.run.state === "failed"));
+  return Boolean(
+    instance.run &&
+    (isActive(instance.run.state) || instance.run.state === "failed"),
+  );
 }
 
 export function nextAvailablePort(
@@ -37,8 +49,12 @@ export function nextAvailablePort(
   throw new RangeError("no available TCP port remains");
 }
 
-export function nextProfileName(instances: Array<Pick<InstanceStatus, "name">>): string {
-  const names = new Set(instances.map((instance) => instanceNameKey(instance.name)));
+export function nextProfileName(
+  instances: Array<Pick<InstanceStatus, "name">>,
+): string {
+  const names = new Set(
+    instances.map((instance) => instanceNameKey(instance.name)),
+  );
   for (let index = 1; ; index += 1) {
     const candidate = `server-${index}`;
     if (!names.has(instanceNameKey(candidate))) return candidate;
@@ -46,5 +62,10 @@ export function nextProfileName(instances: Array<Pick<InstanceStatus, "name">>):
 }
 
 export function instanceStatus(instance: InstanceRecord): InstanceStatus {
-  return { id: instance.id, name: instance.name, config: instance.config, run: instance.currentRun };
+  return {
+    id: instance.id,
+    name: instance.name,
+    config: instance.config,
+    run: instance.currentRun,
+  };
 }

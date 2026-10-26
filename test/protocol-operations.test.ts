@@ -28,14 +28,29 @@ const payloads = {
   "instance.start": { instanceId: "one", allowPullFailure: true },
   "instance.stop": { instanceId: "one" },
   "instance.restart": { instanceId: "one", startDockerDaemon: true },
-  "logs.tail": { instanceId: "one", runId: "run", limit: 20, afterSeq: 4, stream: "stderr" as const },
-  "logs.subscribe": { instanceId: "one", runId: "run", afterSeq: 4, stream: "all" as const },
+  "logs.tail": {
+    instanceId: "one",
+    runId: "run",
+    limit: 20,
+    afterSeq: 4,
+    stream: "stderr" as const,
+  },
+  "logs.subscribe": {
+    instanceId: "one",
+    runId: "run",
+    afterSeq: 4,
+    stream: "all" as const,
+  },
   "docker.startDaemon": {},
   "backend.shutdown": {},
-} satisfies { [K in keyof BackendOperationMap]: BackendOperationMap[K]["payload"] };
+} satisfies {
+  [K in keyof BackendOperationMap]: BackendOperationMap[K]["payload"];
+};
 
 test("validates every backend operation payload", () => {
-  for (const type of Object.keys(payloads) as Array<keyof BackendOperationMap>) {
+  for (const type of Object.keys(payloads) as Array<
+    keyof BackendOperationMap
+  >) {
     assert.equal(isBackendOperation(type), true);
     assert.deepEqual(parseBackendPayload(type, payloads[type]), payloads[type]);
   }
@@ -44,6 +59,10 @@ test("validates every backend operation payload", () => {
 
 test("rejects malformed operation-specific payloads", () => {
   assert.throws(() => parseBackendPayload("instance.get", {}));
-  assert.throws(() => parseBackendPayload("instance.create", { name: "", config }));
-  assert.throws(() => parseBackendPayload("logs.tail", { instanceId: "one", stream: "invalid" }));
+  assert.throws(() =>
+    parseBackendPayload("instance.create", { name: "", config }),
+  );
+  assert.throws(() =>
+    parseBackendPayload("logs.tail", { instanceId: "one", stream: "invalid" }),
+  );
 });

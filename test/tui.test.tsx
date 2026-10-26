@@ -19,7 +19,11 @@ import {
   titlebarSequence,
   visibleLogEvents,
 } from "../src/cli/tui.tsx";
-import type { LaunchConfig, RunEvent, SupervisorStatus } from "../src/core/types.ts";
+import type {
+  LaunchConfig,
+  RunEvent,
+  SupervisorStatus,
+} from "../src/core/types.ts";
 
 const gitConfig: Extract<LaunchConfig, { mode: "git" }> = {
   mode: "git",
@@ -45,62 +49,110 @@ const dockerConfig: Extract<LaunchConfig, { mode: "docker" }> = {
 
 test("renders the dashboard status summary", () => {
   const status: SupervisorStatus = {
-    backend: { running: true, pid: 123, protocolVersion: 2, packageVersion: "0.2.0" },
-    instances: [{
-      id: "instance-a",
-      name: "alpha",
-      config: gitConfig,
-      run: {
-        instanceId: "instance-a",
-        runId: "12345678-aaaa-bbbb-cccc-dddddddddddd",
-        runDir: "/state/run",
-        workerSocket: "/tmp/worker.sock",
+    backend: {
+      running: true,
+      pid: 123,
+      protocolVersion: 2,
+      packageVersion: "0.2.0",
+    },
+    instances: [
+      {
+        id: "instance-a",
+        name: "alpha",
         config: gitConfig,
-        state: "running",
-        pid: 456,
-        childPid: 789,
-        startedAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        exitCode: null,
-        errorCode: null,
-        errorMessage: null,
+        run: {
+          instanceId: "instance-a",
+          runId: "12345678-aaaa-bbbb-cccc-dddddddddddd",
+          runDir: "/state/run",
+          workerSocket: "/tmp/worker.sock",
+          config: gitConfig,
+          state: "running",
+          pid: 456,
+          childPid: 789,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          exitCode: null,
+          errorCode: null,
+          errorMessage: null,
+        },
       },
-    }],
+    ],
   };
   const view = render(<StatusLine status={status} selectedId="instance-a" />);
   assert.match(view.lastFrame() ?? "", /Instance: running · run 12345678/);
-  const header = render(<ProfileHeader instances={status.instances} selectedId="instance-a" />);
-  assert.match(header.lastFrame() ?? "", /1\/1 · alpha · localhost:3000 · running/);
+  const header = render(
+    <ProfileHeader instances={status.instances} selectedId="instance-a" />,
+  );
+  assert.match(
+    header.lastFrame() ?? "",
+    /1\/1 · alpha · localhost:3000 · running/,
+  );
+  assert.doesNotMatch(header.lastFrame() ?? "", /[<>]/);
 });
 
 test("renders the selected profile position and port", () => {
   const instances = [
     { id: "one", name: "main", config: gitConfig, run: null },
-    { id: "two", name: "feature", config: { ...gitConfig, port: 3002 }, run: null },
+    {
+      id: "two",
+      name: "feature",
+      config: { ...gitConfig, port: 3002 },
+      run: null,
+    },
   ];
   const view = render(<ProfileHeader instances={instances} selectedId="two" />);
-  assert.match(view.lastFrame() ?? "", /2\/2 · feature · localhost:3002 · stopped/);
+  assert.match(
+    view.lastFrame() ?? "",
+    /< 2\/2 > · feature · localhost:3002 · stopped/,
+  );
   assert.equal(relativeInstanceId(instances, "one", -1), "two");
   assert.equal(relativeInstanceId(instances, "two", 1), "one");
 });
 
+test("disables relative navigation when only one profile exists", () => {
+  const instances = [{ id: "one", name: "main", config: gitConfig, run: null }];
+  assert.equal(relativeInstanceId(instances, "one", -1), null);
+  assert.equal(relativeInstanceId(instances, "one", 1), null);
+});
+
 test("only enables restart while the instance is running", () => {
   assert.equal(canRestart("running"), true);
-  for (const state of [undefined, "stopped", "failed", "preparing", "starting", "stopping"] as const) {
+  for (const state of [
+    undefined,
+    "stopped",
+    "failed",
+    "preparing",
+    "starting",
+    "stopping",
+  ] as const) {
     assert.equal(canRestart(state), false);
   }
 });
 
 test("exposes profile ports and optional Git database isolation", () => {
-  assert.deepEqual(configFields(gitConfig).slice(2, 4).map((field) => field.key), ["port", "isolated_database"]);
-  assert.equal(configFields(dockerConfig).some((field) => field.key === "port"), true);
+  assert.deepEqual(
+    configFields(gitConfig)
+      .slice(2, 4)
+      .map((field) => field.key),
+    ["port", "isolated_database"],
+  );
+  assert.equal(
+    configFields(dockerConfig).some((field) => field.key === "port"),
+    true,
+  );
 });
 
 test("shows only dashboard actions valid for the lifecycle state", () => {
   const view = render(<DashboardMenu state={undefined} />);
   assert.match(view.lastFrame() ?? "", /s start/);
   assert.match(view.lastFrame() ?? "", /c configure/);
+  assert.match(view.lastFrame() ?? "", /n new profile/);
+  assert.match(view.lastFrame() ?? "", /⌫\/Del delete/);
+  assert.doesNotMatch(view.lastFrame() ?? "", /←\/→ switch/);
   assert.doesNotMatch(view.lastFrame() ?? "", /x stop|r restart|End follow/);
+
+  view.rerender(<DashboardMenu state={undefined} profileCount={2} />);
+  assert.match(view.lastFrame() ?? "", /←\/→ switch/);
 
   view.rerender(<DashboardMenu state="running" />);
   assert.match(view.lastFrame() ?? "", /x stop/);
@@ -113,11 +165,20 @@ test("shows only dashboard actions valid for the lifecycle state", () => {
   assert.match(view.lastFrame() ?? "", /x stop/);
   assert.match(view.lastFrame() ?? "", /c view config/);
   assert.doesNotMatch(view.lastFrame() ?? "", /s start|r restart|c configure/);
+
+  view.rerender(
+    <DashboardMenu state={undefined} hasInstance={false} profileCount={0} />,
+  );
+  assert.match(view.lastFrame() ?? "", /n new profile/);
+  assert.doesNotMatch(view.lastFrame() ?? "", /←\/→ switch/);
 });
 
 test("removes the user-home prefix from titlebar configuration summaries", () => {
   const home = os.homedir();
-  assert.equal(formatConfig({ ...gitConfig, path: `${home}/Documents/PrairieLearn` }), "git Documents/PrairieLearn @ main (:3000)");
+  assert.equal(
+    formatConfig({ ...gitConfig, path: `${home}/Documents/PrairieLearn` }),
+    "git Documents/PrairieLearn @ main (:3000)",
+  );
   assert.equal(
     titlebarSequence("/Users/example/Documents/PrairieLearn", "/Users/example"),
     "\u001B]0;Documents/PrairieLearn\u0007",
@@ -126,14 +187,20 @@ test("removes the user-home prefix from titlebar configuration summaries", () =>
 
 test("hides configuration diagnostics until their field is highlighted", () => {
   const fields = configFields(gitConfig);
-  const view = render(<ConfigView
-    draft={gitConfig}
-    fields={fields}
-    fieldIndex={0}
-    editing={null}
-    hostInfo={{ internetAvailable: true, currentBranch: "main", localBranches: ["main", "feature"] }}
-    error={null}
-  />);
+  const view = render(
+    <ConfigView
+      draft={gitConfig}
+      fields={fields}
+      fieldIndex={0}
+      editing={null}
+      hostInfo={{
+        internetAvailable: true,
+        currentBranch: "main",
+        localBranches: ["main", "feature"],
+      }}
+      error={null}
+    />,
+  );
   const frame = view.lastFrame() ?? "";
   assert.match(frame, /Configuration · git/);
   assert.match(frame, /s switch to docker/);
@@ -154,92 +221,117 @@ test("shows only the diagnostic relevant to the highlighted configuration field"
     currentBranch: "main",
     localBranches: ["main", "feature"],
   };
-  const view = render(<ConfigView
-    draft={gitConfig}
-    fields={fields}
-    fieldIndex={1}
-    editing={null}
-    hostInfo={hostInfo}
-    error={null}
-  />);
+  const view = render(
+    <ConfigView
+      draft={gitConfig}
+      fields={fields}
+      fieldIndex={1}
+      editing={null}
+      hostInfo={hostInfo}
+      error={null}
+    />,
+  );
 
   assert.match(view.lastFrame() ?? "", /Current branch: main/);
   assert.match(view.lastFrame() ?? "", /Available branches: main, feature/);
   assert.doesNotMatch(view.lastFrame() ?? "", /Network:|Dependencies:/);
 
-  view.rerender(<ConfigView
-    draft={gitConfig}
-    fields={fields}
-    fieldIndex={4}
-    editing={null}
-    hostInfo={hostInfo}
-    error={null}
-  />);
-  assert.match(view.lastFrame() ?? "", /Dependencies: git:ok docker:ok pnpm:ok uv:ok/);
-  assert.doesNotMatch(view.lastFrame() ?? "", /Network:|Current branch:|Available branches:/);
+  view.rerender(
+    <ConfigView
+      draft={gitConfig}
+      fields={fields}
+      fieldIndex={4}
+      editing={null}
+      hostInfo={hostInfo}
+      error={null}
+    />,
+  );
+  assert.match(
+    view.lastFrame() ?? "",
+    /Dependencies: git:ok docker:ok pnpm:ok uv:ok/,
+  );
+  assert.doesNotMatch(
+    view.lastFrame() ?? "",
+    /Network:|Current branch:|Available branches:/,
+  );
 
-  view.rerender(<ConfigView
-    draft={gitConfig}
-    fields={fields}
-    fieldIndex={5}
-    editing={null}
-    hostInfo={hostInfo}
-    error={null}
-  />);
+  view.rerender(
+    <ConfigView
+      draft={gitConfig}
+      fields={fields}
+      fieldIndex={5}
+      editing={null}
+      hostInfo={hostInfo}
+      error={null}
+    />,
+  );
   assert.match(view.lastFrame() ?? "", /Network: online/);
-  assert.doesNotMatch(view.lastFrame() ?? "", /Dependencies:|Current branch:|Available branches:/);
+  assert.doesNotMatch(
+    view.lastFrame() ?? "",
+    /Dependencies:|Current branch:|Available branches:/,
+  );
 });
 
 test("shows Docker image details only while the image field is highlighted", () => {
   const fields = configFields(dockerConfig);
   const hostInfo = {
     internetAvailable: true,
-    dockerImages: [{ tag: "us-prod-live", updatedAt: "2026-10-26T12:00:00.000Z" }],
+    dockerImages: [
+      { tag: "us-prod-live", updatedAt: "2026-10-26T12:00:00.000Z" },
+    ],
   };
-  const view = render(<ConfigView
-    draft={dockerConfig}
-    fields={fields}
-    fieldIndex={0}
-    editing={null}
-    hostInfo={hostInfo}
-    error={null}
-  />);
+  const view = render(
+    <ConfigView
+      draft={dockerConfig}
+      fields={fields}
+      fieldIndex={0}
+      editing={null}
+      hostInfo={hostInfo}
+      error={null}
+    />,
+  );
   assert.doesNotMatch(view.lastFrame() ?? "", /Images:/);
 
-  view.rerender(<ConfigView
-    draft={dockerConfig}
-    fields={fields}
-    fieldIndex={1}
-    editing={null}
-    hostInfo={hostInfo}
-    error={null}
-  />);
+  view.rerender(
+    <ConfigView
+      draft={dockerConfig}
+      fields={fields}
+      fieldIndex={1}
+      editing={null}
+      hostInfo={hostInfo}
+      error={null}
+    />,
+  );
   assert.match(view.lastFrame() ?? "", /Images: us-prod-live \(2026-10-26\)/);
 });
 
 test("configuration mode control names git as the target from Docker mode", () => {
-  const view = render(<ConfigView
-    draft={dockerConfig}
-    fields={configFields(dockerConfig)}
-    fieldIndex={0}
-    editing={null}
-    hostInfo={null}
-    error={null}
-  />);
+  const view = render(
+    <ConfigView
+      draft={dockerConfig}
+      fields={configFields(dockerConfig)}
+      fieldIndex={0}
+      editing={null}
+      hostInfo={null}
+      error={null}
+    />,
+  );
 
   assert.match(view.lastFrame() ?? "", /s switch to git/);
 });
 
 test("shows active-run configuration as view-only", () => {
-  const view = render(<ConfigView
-    draft={gitConfig}
-    fields={configFields(gitConfig)}
-    fieldIndex={0}
-    editing={null}
-    hostInfo={null}
-    error={null}
-    readOnly
-  />);
+  const view = render(
+    <ConfigView
+      draft={gitConfig}
+      fields={configFields(gitConfig)}
+      fieldIndex={0}
+      editing={null}
+      hostInfo={null}
+      error={null}
+      readOnly
+    />,
+  );
   const frame = view.lastFrame() ?? "";
 
   assert.match(frame, /Stop current run to modify config/);
@@ -250,18 +342,20 @@ test("shows active-run configuration as view-only", () => {
 
 test("offers repository branches while editing the branch field", () => {
   const fields = configFields(gitConfig);
-  const view = render(<ConfigView
-    draft={{ ...gitConfig, branch: null }}
-    fields={fields}
-    fieldIndex={1}
-    editing={{ key: "branch", value: "feat", suggestionIndex: 0 }}
-    hostInfo={{
-      currentBranch: "main",
-      localBranches: ["main", "feature/local"],
-      remoteBranches: ["feature/remote"],
-    }}
-    error={null}
-  />);
+  const view = render(
+    <ConfigView
+      draft={{ ...gitConfig, branch: null }}
+      fields={fields}
+      fieldIndex={1}
+      editing={{ key: "branch", value: "feat", suggestionIndex: 0 }}
+      hostInfo={{
+        currentBranch: "main",
+        localBranches: ["main", "feature/local"],
+        remoteBranches: ["feature/remote"],
+      }}
+      error={null}
+    />,
+  );
   const frame = view.lastFrame() ?? "";
   assert.match(frame, /feature\/local · local/);
   assert.match(frame, /feature\/remote · origin/);
@@ -269,18 +363,24 @@ test("offers repository branches while editing the branch field", () => {
 });
 
 test("offers directory autocomplete while editing path fields", () => {
-  const view = render(<ConfigView
-    draft={gitConfig}
-    fields={configFields(gitConfig)}
-    fieldIndex={0}
-    editing={{ key: "path", value: "/Users/example/Doc", suggestionIndex: 0 }}
-    hostInfo={null}
-    directorySuggestions={[
-      { label: "Documents", value: "/Users/example/Documents", hint: "directory" },
-      { label: "Docker", value: "/Users/example/Docker", hint: "directory" },
-    ]}
-    error={null}
-  />);
+  const view = render(
+    <ConfigView
+      draft={gitConfig}
+      fields={configFields(gitConfig)}
+      fieldIndex={0}
+      editing={{ key: "path", value: "/Users/example/Doc", suggestionIndex: 0 }}
+      hostInfo={null}
+      directorySuggestions={[
+        {
+          label: "Documents",
+          value: "/Users/example/Documents",
+          hint: "directory",
+        },
+        { label: "Docker", value: "/Users/example/Docker", hint: "directory" },
+      ]}
+      error={null}
+    />,
+  );
   const frame = view.lastFrame() ?? "";
   assert.match(frame, /Tab complete/);
   assert.match(frame, /Documents · directory/);
@@ -322,7 +422,11 @@ test("filters and classifies branch autocomplete suggestions", () => {
     { label: "Use “main” as branch/ref", value: "main", hint: "custom" },
   ]);
   assert.deepEqual(branchSuggestions(hostInfo, "topic/new"), [
-    { label: "Use “topic/new” as branch/ref", value: "topic/new", hint: "custom" },
+    {
+      label: "Use “topic/new” as branch/ref",
+      value: "topic/new",
+      hint: "custom",
+    },
   ]);
 });
 
@@ -333,26 +437,72 @@ test("scrolls the complete merged log model without filtering", () => {
     event(3, "stderr"),
     event(4, "stdout"),
   ];
-  assert.deepEqual(visibleLogEvents(events, 0, 10).map((item) => item.seq), [1, 2, 3, 4]);
-  assert.deepEqual(visibleLogEvents(events, 1, 2).map((item) => item.seq), [2, 3]);
+  assert.deepEqual(
+    visibleLogEvents(events, 0, 10).map((item) => item.seq),
+    [1, 2, 3, 4],
+  );
+  assert.deepEqual(
+    visibleLogEvents(events, 1, 2).map((item) => item.seq),
+    [2, 3],
+  );
 });
 
 test("keeps normal output neutral and accents status, warnings, and errors", () => {
-  assert.equal(logColor({ ...event(1, "system"), message: "starting git run" }), "cyan");
-  assert.equal(logColor({ ...event(2, "stdout"), message: "server ready" }), "green");
-  assert.equal(logColor({ ...event(3, "system"), message: "warning: using offline defaults" }), "yellow");
-  assert.equal(logColor({ ...event(4, "stderr"), message: "command failed" }), "red");
-  assert.equal(logColor({ ...event(5, "system"), phase: "failed", message: "managed instance exited with 130" }), "red");
-  assert.equal(logColor({ ...event(6, "stdout"), message: "Compiling application modules" }), undefined);
-  assert.equal(logColor({ ...event(7, "stderr"), message: "A tool wrote an ordinary diagnostic" }), undefined);
+  assert.equal(
+    logColor({ ...event(1, "system"), message: "starting git run" }),
+    "cyan",
+  );
+  assert.equal(
+    logColor({ ...event(2, "stdout"), message: "server ready" }),
+    "green",
+  );
+  assert.equal(
+    logColor({
+      ...event(3, "system"),
+      message: "warning: using offline defaults",
+    }),
+    "yellow",
+  );
+  assert.equal(
+    logColor({ ...event(4, "stderr"), message: "command failed" }),
+    "red",
+  );
+  assert.equal(
+    logColor({
+      ...event(5, "system"),
+      phase: "failed",
+      message: "managed instance exited with 130",
+    }),
+    "red",
+  );
+  assert.equal(
+    logColor({
+      ...event(6, "stdout"),
+      message: "Compiling application modules",
+    }),
+    undefined,
+  );
+  assert.equal(
+    logColor({
+      ...event(7, "stderr"),
+      message: "A tool wrote an ordinary diagnostic",
+    }),
+    undefined,
+  );
 });
 
 test("indents wrapped log output past the event prefix", () => {
   const longEvent: RunEvent = {
     ...event(304, "stdout"),
-    message: "$ tsx watch --clear-screen=false --tsconfig src/tsconfig.json --include **/*.sql",
+    message:
+      "$ tsx watch --clear-screen=false --tsconfig src/tsconfig.json --include **/*.sql",
   };
-  const output = renderToString(<Box width={50}><LogLine event={longEvent} /></Box>, { columns: 50 });
+  const output = renderToString(
+    <Box width={50}>
+      <LogLine event={longEvent} />
+    </Box>,
+    { columns: 50 },
+  );
   const lines = output.split("\n");
 
   assert.ok(lines.length > 1);
@@ -363,14 +513,26 @@ test("indents wrapped log output past the event prefix", () => {
 test("does not overlap mixed log events when a message wraps", () => {
   const events: RunEvent[] = [
     { ...event(544, "stdout"), message: "Exit status 130" },
-    { ...event(545, "stdout"), message: "A long command with enough content that it wraps onto another terminal line" },
+    {
+      ...event(545, "stdout"),
+      message:
+        "A long command with enough content that it wraps onto another terminal line",
+    },
     { ...event(546, "stderr"), message: "make: *** [dev] Error 130" },
     { ...event(547, "system"), message: "make dev exited with 130" },
   ];
   const output = renderToString(
-    <Box width={70} height={4} flexDirection="column" overflow="hidden" contentOffsetY={1}>
+    <Box
+      width={70}
+      height={4}
+      flexDirection="column"
+      overflow="hidden"
+      contentOffsetY={1}
+    >
       <Box flexDirection="column" flexShrink={0}>
-        {events.map((item) => <LogLine key={item.seq} event={item} />)}
+        {events.map((item) => (
+          <LogLine key={item.seq} event={item} />
+        ))}
       </Box>
     </Box>,
     { columns: 70 },
@@ -382,5 +544,11 @@ test("does not overlap mixed log events when a message wraps", () => {
 });
 
 function event(seq: number, source: RunEvent["source"]): RunEvent {
-  return { seq, source, timestamp: "2026-01-01T00:00:00.000Z", phase: "server", message: String(seq) };
+  return {
+    seq,
+    source,
+    timestamp: "2026-01-01T00:00:00.000Z",
+    phase: "server",
+    message: String(seq),
+  };
 }

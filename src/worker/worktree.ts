@@ -12,7 +12,12 @@ export type WorktreeInfo = {
 };
 
 export function branchSlug(ref: string): string {
-  return ref.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "ref";
+  return (
+    ref
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "ref"
+  );
 }
 
 export async function createBranchWorktree(
@@ -24,22 +29,42 @@ export async function createBranchWorktree(
 ): Promise<WorktreeInfo> {
   const root = await repoRoot(sourcePath);
   const slug = branchSlug(branch);
-  const worktreePath = await fs.mkdtemp(path.join(os.tmpdir(), `prairielearn-${slug}.`));
+  const worktreePath = await fs.mkdtemp(
+    path.join(os.tmpdir(), `prairielearn-${slug}.`),
+  );
   const tempBranch = `prairielearn/tmp/${slug}-${path.basename(worktreePath)}`;
 
   if (online && !localOnly) {
-    await git(root, ["fetch", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`]);
+    await git(root, [
+      "fetch",
+      "origin",
+      `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ]);
   }
 
   const startRef = await pickStartRef(root, branch);
-  const add = await git(root, ["worktree", "add", "-b", tempBranch, worktreePath, startRef]);
+  const add = await git(root, [
+    "worktree",
+    "add",
+    "-b",
+    tempBranch,
+    worktreePath,
+    startRef,
+  ]);
   if (add.status !== 0) {
     await fs.rm(worktreePath, { force: true, recursive: true });
-    throw new Error(add.stderr.trim() || `could not create worktree for ${branch}`);
+    throw new Error(
+      add.stderr.trim() || `could not create worktree for ${branch}`,
+    );
   }
 
   if (startRef === `origin/${branch}`) {
-    await git(worktreePath, ["branch", "--set-upstream-to", `origin/${branch}`, tempBranch]);
+    await git(worktreePath, [
+      "branch",
+      "--set-upstream-to",
+      `origin/${branch}`,
+      tempBranch,
+    ]);
   }
 
   await copyQuestionConversionDist(root, worktreePath);
@@ -66,14 +91,27 @@ async function pickStartRef(root: string, branch: string): Promise<string> {
   throw new Error(`could not resolve branch/ref ${branch}`);
 }
 
-async function copyQuestionConversionDist(sourceRoot: string, targetRoot: string): Promise<void> {
+async function copyQuestionConversionDist(
+  sourceRoot: string,
+  targetRoot: string,
+): Promise<void> {
   const relative = path.join("packages", "question-conversion", "dist");
   const source = path.join(sourceRoot, relative);
-  const targetPackage = path.join(targetRoot, "packages", "question-conversion");
+  const targetPackage = path.join(
+    targetRoot,
+    "packages",
+    "question-conversion",
+  );
   try {
-    const [sourceStat, targetPackageStat] = await Promise.all([fs.stat(source), fs.stat(targetPackage)]);
+    const [sourceStat, targetPackageStat] = await Promise.all([
+      fs.stat(source),
+      fs.stat(targetPackage),
+    ]);
     if (!sourceStat.isDirectory() || !targetPackageStat.isDirectory()) return;
-    await fs.cp(source, path.join(targetPackage, "dist"), { recursive: true, force: true });
+    await fs.cp(source, path.join(targetPackage, "dist"), {
+      recursive: true,
+      force: true,
+    });
   } catch {
     // Optional cache copy.
   }

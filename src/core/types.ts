@@ -57,12 +57,7 @@ export type Logger = {
 };
 
 export type LifecycleState =
-  | "stopped"
-  | "preparing"
-  | "starting"
-  | "running"
-  | "stopping"
-  | "failed";
+  "stopped" | "preparing" | "starting" | "running" | "stopping" | "failed";
 
 export type LogSource = "system" | "stdout" | "stderr";
 

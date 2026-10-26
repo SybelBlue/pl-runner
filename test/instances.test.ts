@@ -46,7 +46,12 @@ function instance(name: string, state?: LifecycleState): InstanceStatus {
 }
 
 test("centralizes lifecycle eligibility", () => {
-  for (const state of ["preparing", "starting", "running", "stopping"] as const) {
+  for (const state of [
+    "preparing",
+    "starting",
+    "running",
+    "stopping",
+  ] as const) {
     assert.equal(isActive(state), true);
     assert.equal(isStartEligible(instance(state, state)), false);
   }
@@ -59,13 +64,20 @@ test("centralizes lifecycle eligibility", () => {
 });
 
 test("matches names case-insensitively and generates an unused profile name", () => {
-  const instances = [instance("Alpha"), instance("server-1"), instance("SERVER-2")];
+  const instances = [
+    instance("Alpha"),
+    instance("server-1"),
+    instance("SERVER-2"),
+  ];
   assert.equal(findInstanceByName(instances, " alpha ")?.id, "Alpha");
   assert.equal(nextProfileName(instances), "server-3");
 });
 
 test("allocates the lowest port and reports exhaustion", () => {
-  const instances = [instance("first"), { ...instance("second"), config: { ...config, port: 3002 } }];
+  const instances = [
+    instance("first"),
+    { ...instance("second"), config: { ...config, port: 3002 } },
+  ];
   assert.equal(nextAvailablePort(instances), 3001);
   assert.throws(
     () => nextAvailablePort([{ config: { port: 65_535 } }], 65_535),

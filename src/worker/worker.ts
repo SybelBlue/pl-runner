@@ -1,12 +1,27 @@
 import fs from "node:fs/promises";
 import net from "node:net";
-import { checkPreflightDependencies, missingDependencies } from "../system/deps.js";
+import {
+  checkPreflightDependencies,
+  missingDependencies,
+} from "../system/deps.js";
 import { launchDocker } from "./docker.js";
 import { EventLog, eventLogger } from "./event-log.js";
-import { WORKER_PROTOCOL_VERSION, workerRequestSchema } from "../core/protocol.js";
-import { applyOfflineDefaults, launchRun, normalizeRunConfig, type LaunchControl } from "./run.js";
+import {
+  WORKER_PROTOCOL_VERSION,
+  workerRequestSchema,
+} from "../core/protocol.js";
+import {
+  applyOfflineDefaults,
+  launchRun,
+  normalizeRunConfig,
+  type LaunchControl,
+} from "./run.js";
 import { eventLogFile, saveWorkerState } from "../backend/store.js";
-import type { LaunchConfig, LifecycleState, WorkerState } from "../core/types.js";
+import type {
+  LaunchConfig,
+  LifecycleState,
+  WorkerState,
+} from "../core/types.js";
 
 export type WorkerRequest = {
   instanceId: string;
@@ -18,8 +33,36 @@ export type WorkerRequest = {
   startDockerDaemon: boolean;
 };
 
+export async function recordWorkerStartupFailure(
+  requestPath: string,
+  cause: unknown,
+): Promise<void> {
+  const request = JSON.parse(
+    await fs.readFile(requestPath, "utf8"),
+  ) as WorkerRequest;
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const timestamp = new Date().toISOString();
+  const log = new EventLog(eventLogFile(request.runDir), request.runId);
+  await log.initialize();
+  await log.append("system", "failed", `worker failed to start: ${message}`);
+  await saveWorkerState(request.runDir, {
+    runId: request.runId,
+    state: "failed",
+    pid: process.pid,
+    childPid: null,
+    startedAt: timestamp,
+    updatedAt: timestamp,
+    exitCode: 1,
+    errorCode: "WORKER_START_FAILED",
+    errorMessage: message,
+  });
+  await log.flush();
+}
+
 export async function runWorker(requestPath: string): Promise<number> {
-  const request = JSON.parse(await fs.readFile(requestPath, "utf8")) as WorkerRequest;
+  const request = JSON.parse(
+    await fs.readFile(requestPath, "utf8"),
+  ) as WorkerRequest;
   const log = new EventLog(eventLogFile(request.runDir), request.runId);
   await log.initialize();
 
@@ -59,18 +102,30 @@ export async function runWorker(requestPath: string): Promise<number> {
     void log.append("system", phase, "stop requested; sending SIGINT");
     activeTerminate?.("SIGINT");
     const termTimer = setTimeout(() => {
-      void log.append("system", phase, "process did not stop after 10s; sending SIGTERM");
+      void log.append(
+        "system",
+        phase,
+        "process did not stop after 10s; sending SIGTERM",
+      );
       activeTerminate?.("SIGTERM");
     }, 10_000);
     const killTimer = setTimeout(() => {
-      void log.append("system", phase, "process did not stop after 15s; sending SIGKILL");
+      void log.append(
+        "system",
+        phase,
+        "process did not stop after 15s; sending SIGKILL",
+      );
       activeTerminate?.("SIGKILL");
     }, 15_000);
     termTimer.unref();
     killTimer.unref();
   };
 
-  const server = await createWorkerServer(request.workerSocket, () => state, requestStop);
+  const server = await createWorkerServer(
+    request.workerSocket,
+    () => state,
+    requestStop,
+  );
   process.on("SIGINT", requestStop);
   process.on("SIGTERM", requestStop);
 
@@ -100,9 +155,16 @@ export async function runWorker(requestPath: string): Promise<number> {
 
   let exitCode = 1;
   try {
-    await log.append("system", "preparing", `starting ${request.config.mode} run ${request.runId}`);
+    await log.append(
+      "system",
+      "preparing",
+      `starting ${request.config.mode} run ${request.runId}`,
+    );
     const deps = await checkPreflightDependencies();
-    const needed = request.config.mode === "git" ? ["git", "pnpm", "uv"] as const : ["docker"] as const;
+    const needed =
+      request.config.mode === "git"
+        ? (["git", "pnpm", "uv"] as const)
+        : (["docker"] as const);
     const missing = missingDependencies(deps, [...needed]);
     if (missing.length > 0) {
       failureCode = "MISSING_DEPENDENCY";
@@ -110,7 +172,11 @@ export async function runWorker(requestPath: string): Promise<number> {
       logger.error(failureMessage);
       exitCode = 127;
     } else if (request.config.mode === "git") {
-      const normalized = await normalizeRunConfig(request.config, false, logger);
+      const normalized = await normalizeRunConfig(
+        request.config,
+        false,
+        logger,
+      );
       if (!normalized) {
         failureCode = "INVALID_CONFIG";
         failureMessage = "Git configuration requires a PrairieLearn path";
@@ -133,7 +199,8 @@ export async function runWorker(requestPath: string): Promise<number> {
     exitCode = 1;
   }
 
-  const terminalState: LifecycleState = stopRequested || exitCode === 0 ? "stopped" : "failed";
+  const terminalState: LifecycleState =
+    stopRequested || exitCode === 0 ? "stopped" : "failed";
   phase = terminalState;
   if (exitCode !== 0 && !stopRequested) {
     failureCode ??= "PROCESS_EXITED";
@@ -142,7 +209,9 @@ export async function runWorker(requestPath: string): Promise<number> {
   await log.append(
     "system",
     phase,
-    stopRequested ? "managed instance stopped" : `managed instance exited with ${exitCode}`,
+    stopRequested
+      ? "managed instance stopped"
+      : `managed instance exited with ${exitCode}`,
   );
   await persist({
     state: terminalState,
@@ -181,15 +250,23 @@ async function createWorkerServer(
         try {
           const request = workerRequestSchema.parse(JSON.parse(line));
           if (request.type === "worker.status") {
-            socket.write(`${JSON.stringify(workerSuccess(request.id, getState()))}\n`);
+            socket.write(
+              `${JSON.stringify(workerSuccess(request.id, getState()))}\n`,
+            );
           } else if (request.type === "worker.stop") {
             stop();
-            socket.write(`${JSON.stringify(workerSuccess(request.id, { accepted: true }))}\n`);
+            socket.write(
+              `${JSON.stringify(workerSuccess(request.id, { accepted: true }))}\n`,
+            );
           } else {
-            socket.write(`${JSON.stringify(workerFailure(request.id, "NOT_FOUND", `unknown worker request: ${request.type}`))}\n`);
+            socket.write(
+              `${JSON.stringify(workerFailure(request.id, "NOT_FOUND", `unknown worker request: ${request.type}`))}\n`,
+            );
           }
         } catch (error) {
-          socket.write(`${JSON.stringify(workerFailure("invalid", "PROTOCOL_MISMATCH", error instanceof Error ? error.message : String(error)))}\n`);
+          socket.write(
+            `${JSON.stringify(workerFailure("invalid", "PROTOCOL_MISMATCH", error instanceof Error ? error.message : String(error)))}\n`,
+          );
         }
       }
     });
@@ -205,7 +282,10 @@ async function createWorkerServer(
   return server;
 }
 
-async function closeServer(server: net.Server, socketPath: string): Promise<void> {
+async function closeServer(
+  server: net.Server,
+  socketPath: string,
+): Promise<void> {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await fs.rm(socketPath, { force: true });
 }
@@ -215,5 +295,10 @@ function workerSuccess(id: string, result: unknown): unknown {
 }
 
 function workerFailure(id: string, code: string, message: string): unknown {
-  return { protocol: WORKER_PROTOCOL_VERSION, id, ok: false, error: { code, message } };
+  return {
+    protocol: WORKER_PROTOCOL_VERSION,
+    id,
+    ok: false,
+    error: { code, message },
+  };
 }

@@ -27,7 +27,7 @@ Lifecycle and log commands accept `--instance <name>`. Without it, the CLI selec
 
 - `Left`/`Right`: switch named profiles
 - `n`: create a profile using the next free port
-- `Delete`: delete a stopped profile and its retained logs after confirmation
+- `Backspace`/`Delete`: delete a stopped profile and its retained logs after confirmation
 - `s`: start the selected profile
 - `x`: stop the selected instance
 - `r`: restart the selected running instance

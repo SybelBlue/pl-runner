@@ -16,13 +16,18 @@ const logger: Logger = {
 };
 
 test("writes a private effective config with the selected port", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pl-effective-config-test-"));
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "pl-effective-config-test-"),
+  );
   const source = path.join(directory, "source.json");
-  await fs.writeFile(source, JSON.stringify({
-    serverPort: "9999",
-    nested: { preserved: true },
-    list: ["preserved"],
-  }));
+  await fs.writeFile(
+    source,
+    JSON.stringify({
+      serverPort: "9999",
+      nested: { preserved: true },
+      list: ["preserved"],
+    }),
+  );
   try {
     const result = await writeEffectivePrairieLearnConfig({
       launchPath: directory,
@@ -32,7 +37,10 @@ test("writes a private effective config with the selected port", async () => {
       isolatedDatabase: false,
       env: { PL_CONFIG_PATH: source },
     });
-    const config = JSON.parse(await fs.readFile(result.path, "utf8")) as Record<string, unknown>;
+    const config = JSON.parse(await fs.readFile(result.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
     assert.equal(config.serverPort, "3012");
     assert.deepEqual(config.nested, { preserved: true });
     assert.deepEqual(config.list, ["preserved"]);
@@ -44,9 +52,14 @@ test("writes a private effective config with the selected port", async () => {
 });
 
 test("overlays a stable database name only when isolation is enabled", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pl-isolated-config-test-"));
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "pl-isolated-config-test-"),
+  );
   const source = path.join(directory, "source.json");
-  await fs.writeFile(source, JSON.stringify({ postgresqlDatabase: "postgres" }));
+  await fs.writeFile(
+    source,
+    JSON.stringify({ postgresqlDatabase: "postgres" }),
+  );
   try {
     const result = await writeEffectivePrairieLearnConfig({
       launchPath: directory,
@@ -56,7 +69,10 @@ test("overlays a stable database name only when isolation is enabled", async () 
       isolatedDatabase: true,
       env: { PL_CONFIG_PATH: source },
     });
-    const config = JSON.parse(await fs.readFile(result.path, "utf8")) as Record<string, unknown>;
+    const config = JSON.parse(await fs.readFile(result.path, "utf8")) as Record<
+      string,
+      unknown
+    >;
     assert.equal(result.databaseName, "prairielearn_pl_runner_abc_123");
     assert.equal(config.postgresqlDatabase, result.databaseName);
   } finally {
@@ -65,10 +81,15 @@ test("overlays a stable database name only when isolation is enabled", async () 
 });
 
 test("creates a missing isolated database and reports missing PostgreSQL tools", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pl-isolated-db-test-"));
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "pl-isolated-db-test-"),
+  );
   const marker = path.join(directory, "created");
   await fs.writeFile(path.join(directory, "psql"), "#!/bin/sh\nexit 0\n");
-  await fs.writeFile(path.join(directory, "createdb"), `#!/bin/sh\nprintf x > ${JSON.stringify(marker)}\n`);
+  await fs.writeFile(
+    path.join(directory, "createdb"),
+    `#!/bin/sh\nprintf x > ${JSON.stringify(marker)}\n`,
+  );
   await Promise.all([
     fs.chmod(path.join(directory, "psql"), 0o755),
     fs.chmod(path.join(directory, "createdb"), 0o755),

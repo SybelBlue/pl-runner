@@ -3,7 +3,10 @@ import path from "node:path";
 import { runCommand } from "./process.js";
 import type { Logger } from "../core/types.js";
 
-export async function validateProjectPath(projectPath: string, logger: Logger): Promise<boolean> {
+export async function validateProjectPath(
+  projectPath: string,
+  logger: Logger,
+): Promise<boolean> {
   try {
     const stat = await fs.stat(projectPath);
     if (!stat.isDirectory()) {
@@ -17,13 +20,17 @@ export async function validateProjectPath(projectPath: string, logger: Logger): 
 
   const inside = await git(projectPath, ["rev-parse", "--is-inside-work-tree"]);
   if (inside.status !== 0 || inside.stdout.trim() !== "true") {
-    logger.error("PrairieLearn server path does not appear to be a git repository.");
+    logger.error(
+      "PrairieLearn server path does not appear to be a git repository.",
+    );
     return false;
   }
 
   const remotes = await git(projectPath, ["remote", "-v"]);
   if (!remotes.stdout.includes("PrairieLearn/PrairieLearn.git")) {
-    logger.warn("PrairieLearn server path does not appear to have a PrairieLearn/PrairieLearn.git remote.");
+    logger.warn(
+      "PrairieLearn server path does not appear to have a PrairieLearn/PrairieLearn.git remote.",
+    );
   }
 
   try {
@@ -47,12 +54,18 @@ export async function currentBranch(cwd: string): Promise<string | null> {
 
 export async function repoRoot(cwd: string): Promise<string> {
   const result = await git(cwd, ["rev-parse", "--show-toplevel"]);
-  if (result.status !== 0) throw new Error(result.stderr.trim() || "could not find git root");
+  if (result.status !== 0)
+    throw new Error(result.stderr.trim() || "could not find git root");
   return result.stdout.trim();
 }
 
 export async function localBranches(cwd: string): Promise<string[]> {
-  const result = await git(cwd, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads"]);
+  const result = await git(cwd, [
+    "for-each-ref",
+    "--sort=-committerdate",
+    "--format=%(refname:short)",
+    "refs/heads",
+  ]);
   if (result.status !== 0) return [];
   return result.stdout
     .split(/\r?\n/)
@@ -61,7 +74,12 @@ export async function localBranches(cwd: string): Promise<string[]> {
 }
 
 export async function remoteOnlyBranches(cwd: string): Promise<string[]> {
-  const result = await git(cwd, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/remotes/origin"]);
+  const result = await git(cwd, [
+    "for-each-ref",
+    "--sort=-committerdate",
+    "--format=%(refname:short)",
+    "refs/remotes/origin",
+  ]);
   if (result.status !== 0) return [];
   return result.stdout
     .split(/\r?\n/)
@@ -71,29 +89,55 @@ export async function remoteOnlyBranches(cwd: string): Promise<string[]> {
     .filter((line) => line && !line.startsWith("prairielearn/tmp/"));
 }
 
-export async function upstreamRef(cwd: string): Promise<{ remote: string; merge: string; tracking: string } | null> {
+export async function upstreamRef(
+  cwd: string,
+): Promise<{ remote: string; merge: string; tracking: string } | null> {
   const branch = await currentBranch(cwd);
   if (!branch) return null;
   const remote = await git(cwd, ["config", "--get", `branch.${branch}.remote`]);
   const merge = await git(cwd, ["config", "--get", `branch.${branch}.merge`]);
-  if (remote.status === 0 && merge.status === 0 && remote.stdout.trim() && merge.stdout.trim()) {
+  if (
+    remote.status === 0 &&
+    merge.status === 0 &&
+    remote.stdout.trim() &&
+    merge.stdout.trim()
+  ) {
     const remoteName = remote.stdout.trim();
     const mergeRef = merge.stdout.trim();
-    return { remote: remoteName, merge: mergeRef, tracking: `${remoteName}/${mergeRef.replace(/^refs\/heads\//, "")}` };
+    return {
+      remote: remoteName,
+      merge: mergeRef,
+      tracking: `${remoteName}/${mergeRef.replace(/^refs\/heads\//, "")}`,
+    };
   }
 
-  const tracking = await git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+  const tracking = await git(cwd, [
+    "rev-parse",
+    "--abbrev-ref",
+    "--symbolic-full-name",
+    "@{u}",
+  ]);
   if (tracking.status !== 0 || !tracking.stdout.trim()) return null;
   const [remoteName] = tracking.stdout.trim().split("/", 1);
-  return { remote: remoteName, merge: tracking.stdout.trim().replace(`${remoteName}/`, "refs/heads/"), tracking: tracking.stdout.trim() };
+  return {
+    remote: remoteName,
+    merge: tracking.stdout.trim().replace(`${remoteName}/`, "refs/heads/"),
+    tracking: tracking.stdout.trim(),
+  };
 }
 
-export async function revision(cwd: string, ref: string): Promise<string | null> {
+export async function revision(
+  cwd: string,
+  ref: string,
+): Promise<string | null> {
   const result = await git(cwd, ["rev-parse", ref]);
   return result.status === 0 ? result.stdout.trim() : null;
 }
 
-export async function commitAgeSeconds(cwd: string, ref: string): Promise<number | null> {
+export async function commitAgeSeconds(
+  cwd: string,
+  ref: string,
+): Promise<number | null> {
   const result = await git(cwd, ["log", "-1", "--format=%ct", ref]);
   const timestamp = Number(result.stdout.trim());
   if (result.status !== 0 || !Number.isFinite(timestamp)) return null;

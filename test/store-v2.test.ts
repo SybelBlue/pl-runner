@@ -55,7 +55,9 @@ test("imports legacy YAML once and leaves it untouched", async () => {
 });
 
 test("migrates v2 Docker mappings into named v3 profiles", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pl-store-v2-test-"));
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "pl-store-v2-test-"),
+  );
   const env = {
     ...process.env,
     PRAIRIELEARN_STATE_DIR: path.join(directory, "state"),
@@ -64,21 +66,24 @@ test("migrates v2 Docker mappings into named v3 profiles", async () => {
   };
   try {
     await fs.mkdir(env.PRAIRIELEARN_STATE_DIR, { recursive: true });
-    await fs.writeFile(runtimePaths(env).previousStateFile, JSON.stringify({
-      schemaVersion: 2,
-      savedConfig: {
-        mode: "docker",
-        course_path: "/course",
-        image: "latest",
-        port: "3010:3000",
-        tmp_dir: "/tmp",
-        local_only: true,
-        quiet: false,
-      },
-      currentRun: null,
-      history: [],
-      migratedLegacyConfig: true,
-    }));
+    await fs.writeFile(
+      runtimePaths(env).previousStateFile,
+      JSON.stringify({
+        schemaVersion: 2,
+        savedConfig: {
+          mode: "docker",
+          course_path: "/course",
+          image: "latest",
+          port: "3010:3000",
+          tmp_dir: "/tmp",
+          local_only: true,
+          quiet: false,
+        },
+        currentRun: null,
+        history: [],
+        migratedLegacyConfig: true,
+      }),
+    );
     const state = await loadSupervisorState(env);
     assert.equal(state.instances[0]?.config.port, 3010);
     assert.equal(state.instances[0]?.name, "default");
@@ -89,7 +94,9 @@ test("migrates v2 Docker mappings into named v3 profiles", async () => {
 });
 
 test("preserves a v2 current run and gives a distinct saved config a free port", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pl-store-current-v2-test-"));
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "pl-store-current-v2-test-"),
+  );
   const env = {
     ...process.env,
     PRAIRIELEARN_STATE_DIR: path.join(directory, "state"),
@@ -98,45 +105,51 @@ test("preserves a v2 current run and gives a distinct saved config a free port",
   };
   try {
     await fs.mkdir(env.PRAIRIELEARN_STATE_DIR, { recursive: true });
-    await fs.writeFile(runtimePaths(env).previousStateFile, JSON.stringify({
-      schemaVersion: 2,
-      savedConfig: {
-        mode: "docker",
-        course_path: "/course",
-        image: "us-prod-live",
-        port: "3000:3000",
-        tmp_dir: "/tmp",
-        local_only: true,
-        quiet: false,
-      },
-      currentRun: {
-        runId: "run-current",
-        runDir: "/state/run-current",
-        workerSocket: "/tmp/worker.sock",
-        config: {
-          mode: "git",
-          path: "/PrairieLearn",
-          branch: null,
-          force_rebuild: false,
+    await fs.writeFile(
+      runtimePaths(env).previousStateFile,
+      JSON.stringify({
+        schemaVersion: 2,
+        savedConfig: {
+          mode: "docker",
+          course_path: "/course",
+          image: "us-prod-live",
+          port: "3000:3000",
+          tmp_dir: "/tmp",
           local_only: true,
-          no_watch_upstream: true,
           quiet: false,
         },
-        state: "running",
-        pid: 12,
-        childPid: 34,
-        startedAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        exitCode: null,
-        errorCode: null,
-        errorMessage: null,
-      },
-      history: ["old-run"],
-      migratedLegacyConfig: true,
-    }));
+        currentRun: {
+          runId: "run-current",
+          runDir: "/state/run-current",
+          workerSocket: "/tmp/worker.sock",
+          config: {
+            mode: "git",
+            path: "/PrairieLearn",
+            branch: null,
+            force_rebuild: false,
+            local_only: true,
+            no_watch_upstream: true,
+            quiet: false,
+          },
+          state: "running",
+          pid: 12,
+          childPid: 34,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          exitCode: null,
+          errorCode: null,
+          errorMessage: null,
+        },
+        history: ["old-run"],
+        migratedLegacyConfig: true,
+      }),
+    );
     const state = await loadSupervisorState(env);
     assert.equal(state.instances.length, 2);
-    assert.equal(state.instances[0]?.currentRun?.instanceId, state.instances[0]?.id);
+    assert.equal(
+      state.instances[0]?.currentRun?.instanceId,
+      state.instances[0]?.id,
+    );
     assert.equal(state.instances[0]?.config.port, 3000);
     assert.equal(state.instances[1]?.config.port, 3001);
     assert.deepEqual(state.instances[0]?.history, ["old-run"]);
@@ -146,7 +159,9 @@ test("preserves a v2 current run and gives a distinct saved config a free port",
 });
 
 test("retains five completed runs per profile without pruning another profile", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pl-store-retention-test-"));
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "pl-store-retention-test-"),
+  );
   const env = {
     ...process.env,
     PRAIRIELEARN_STATE_DIR: path.join(directory, "state"),
@@ -178,11 +193,27 @@ test("retains five completed runs per profile without pruning another profile", 
   try {
     const runsDir = runtimePaths(env).runsDir;
     await fs.mkdir(runsDir, { recursive: true });
-    await Promise.all(histories.flat().map((runId) => fs.mkdir(path.join(runsDir, runId))));
+    await Promise.all(
+      histories.flat().map((runId) => fs.mkdir(path.join(runsDir, runId))),
+    );
     await pruneRunHistory(state, env, 5);
-    assert.deepEqual(state.instances[0]?.history, ["a-2", "a-3", "a-4", "a-5", "a-6"]);
+    assert.deepEqual(state.instances[0]?.history, [
+      "a-2",
+      "a-3",
+      "a-4",
+      "a-5",
+      "a-6",
+    ]);
     assert.deepEqual(state.instances[1]?.history, ["b-1", "b-2"]);
-    assert.deepEqual((await fs.readdir(runsDir)).sort(), ["a-2", "a-3", "a-4", "a-5", "a-6", "b-1", "b-2"]);
+    assert.deepEqual((await fs.readdir(runsDir)).sort(), [
+      "a-2",
+      "a-3",
+      "a-4",
+      "a-5",
+      "a-6",
+      "b-1",
+      "b-2",
+    ]);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

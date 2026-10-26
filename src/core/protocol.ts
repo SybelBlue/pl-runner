@@ -9,7 +9,7 @@ import type {
   SupervisorStatus,
 } from "./types.js";
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const WORKER_PROTOCOL_VERSION = 1;
 
 export const instanceNameSchema = z.string().trim().min(1).max(64);
@@ -37,7 +37,10 @@ const dockerConfigSchema = z.object({
   quiet: z.boolean(),
 });
 
-export const launchConfigSchema = z.discriminatedUnion("mode", [gitConfigSchema, dockerConfigSchema]);
+export const launchConfigSchema = z.discriminatedUnion("mode", [
+  gitConfigSchema,
+  dockerConfigSchema,
+]);
 
 const emptyPayloadSchema = z.object({});
 const instanceIdSchema = z.string().min(1);
@@ -57,25 +60,52 @@ export type HostInspection = {
 export type BackendOperationMap = {
   hello: {
     payload: Record<string, never>;
-    result: { protocolVersion: number; packageVersion: string; capabilities: string[] };
+    result: {
+      protocolVersion: number;
+      packageVersion: string;
+      capabilities: string[];
+    };
   };
   "status.get": { payload: Record<string, never>; result: SupervisorStatus };
-  "backend.status": { payload: Record<string, never>; result: SupervisorStatus };
+  "backend.status": {
+    payload: Record<string, never>;
+    result: SupervisorStatus;
+  };
   "instance.get": { payload: { instanceId: string }; result: InstanceStatus };
-  "instance.create": { payload: { name: string; config: LaunchConfig }; result: InstanceStatus };
+  "instance.create": {
+    payload: { name: string; config: LaunchConfig };
+    result: InstanceStatus;
+  };
   "instance.update": {
     payload: { instanceId: string; name: string; config: LaunchConfig };
     result: InstanceStatus;
   };
-  "instance.delete": { payload: { instanceId: string }; result: { deletedId: string } };
-  "host.inspect": { payload: { mode: LaunchConfig["mode"]; path?: string }; result: HostInspection };
+  "instance.delete": {
+    payload: { instanceId: string };
+    result: { deletedId: string };
+  };
+  "host.inspect": {
+    payload: { mode: LaunchConfig["mode"]; path?: string };
+    result: HostInspection;
+  };
   "instance.start": {
-    payload: { instanceId: string; allowPullFailure?: boolean; startDockerDaemon?: boolean };
+    payload: {
+      instanceId: string;
+      allowPullFailure?: boolean;
+      startDockerDaemon?: boolean;
+    };
     result: RunRecord;
   };
-  "instance.stop": { payload: { instanceId: string }; result: RunRecord | null };
+  "instance.stop": {
+    payload: { instanceId: string };
+    result: RunRecord | null;
+  };
   "instance.restart": {
-    payload: { instanceId: string; allowPullFailure?: boolean; startDockerDaemon?: boolean };
+    payload: {
+      instanceId: string;
+      allowPullFailure?: boolean;
+      startDockerDaemon?: boolean;
+    };
     result: RunRecord;
   };
   "logs.tail": {
@@ -98,7 +128,10 @@ export type BackendOperationMap = {
     };
     result: { subscribed: true; runId: string };
   };
-  "docker.startDaemon": { payload: Record<string, never>; result: { exitCode: number } };
+  "docker.startDaemon": {
+    payload: Record<string, never>;
+    result: { exitCode: number };
+  };
   "backend.shutdown": {
     payload: Record<string, never>;
     result: { accepted: true; activeInstancesPreserved: number };
@@ -106,18 +139,30 @@ export type BackendOperationMap = {
 };
 
 export type BackendOperation = keyof BackendOperationMap;
-export type BackendPayload<K extends BackendOperation> = BackendOperationMap[K]["payload"];
-export type BackendResult<K extends BackendOperation> = BackendOperationMap[K]["result"];
+export type BackendPayload<K extends BackendOperation> =
+  BackendOperationMap[K]["payload"];
+export type BackendResult<K extends BackendOperation> =
+  BackendOperationMap[K]["result"];
 
 const backendPayloadSchemas = {
   hello: emptyPayloadSchema,
   "status.get": emptyPayloadSchema,
   "backend.status": emptyPayloadSchema,
   "instance.get": z.object({ instanceId: instanceIdSchema }),
-  "instance.create": z.object({ name: instanceNameSchema, config: launchConfigSchema }),
-  "instance.update": z.object({ instanceId: instanceIdSchema, name: instanceNameSchema, config: launchConfigSchema }),
+  "instance.create": z.object({
+    name: instanceNameSchema,
+    config: launchConfigSchema,
+  }),
+  "instance.update": z.object({
+    instanceId: instanceIdSchema,
+    name: instanceNameSchema,
+    config: launchConfigSchema,
+  }),
   "instance.delete": z.object({ instanceId: instanceIdSchema }),
-  "host.inspect": z.object({ mode: z.enum(["git", "docker"]), path: z.string().optional() }),
+  "host.inspect": z.object({
+    mode: z.enum(["git", "docker"]),
+    path: z.string().optional(),
+  }),
   "instance.start": z.object({
     instanceId: instanceIdSchema,
     allowPullFailure: z.boolean().optional(),
@@ -197,11 +242,16 @@ type ProtocolError = {
 };
 
 export type ProtocolResponse<T = unknown> =
-  | { protocol: 2; id: string; ok: true; result: T }
-  | { protocol: 2; id: string; ok: false; error: ProtocolError };
+  | { protocol: typeof PROTOCOL_VERSION; id: string; ok: true; result: T }
+  | {
+      protocol: typeof PROTOCOL_VERSION;
+      id: string;
+      ok: false;
+      error: ProtocolError;
+    };
 
 export type ProtocolEvent = {
-  protocol: 2;
+  protocol: typeof PROTOCOL_VERSION;
   event: "log" | "status";
   data: RunEvent | SupervisorStatus;
 };
@@ -210,7 +260,12 @@ export function success<T>(id: string, result: T): ProtocolResponse<T> {
   return { protocol: PROTOCOL_VERSION, id, ok: true, result };
 }
 
-export function failure(id: string, code: ProtocolErrorCode, message: string, details?: unknown): ProtocolResponse {
+export function failure(
+  id: string,
+  code: ProtocolErrorCode,
+  message: string,
+  details?: unknown,
+): ProtocolResponse {
   return {
     protocol: PROTOCOL_VERSION,
     id,

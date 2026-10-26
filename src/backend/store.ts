@@ -22,16 +22,22 @@ const EMPTY_STATE: SupervisorState = {
 type SupervisorStateV2 = {
   schemaVersion: 2;
   savedConfig?: unknown;
-  currentRun?: (Omit<RunRecord, "instanceId" | "config"> & { config: unknown }) | null;
+  currentRun?:
+    (Omit<RunRecord, "instanceId" | "config"> & { config: unknown }) | null;
   history?: unknown;
   migratedLegacyConfig?: boolean;
 };
 
-export async function loadSupervisorState(env: NodeJS.ProcessEnv = process.env): Promise<SupervisorState> {
+export async function loadSupervisorState(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<SupervisorState> {
   const paths = await ensureRuntimePaths(env);
   try {
-    const parsed = JSON.parse(await fs.readFile(paths.stateFile, "utf8")) as Partial<SupervisorState>;
-    if (parsed.schemaVersion !== 3) throw new Error("unsupported state version");
+    const parsed = JSON.parse(
+      await fs.readFile(paths.stateFile, "utf8"),
+    ) as Partial<SupervisorState>;
+    if (parsed.schemaVersion !== 3)
+      throw new Error("unsupported state version");
     return normalizeStateV3(parsed);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -39,8 +45,11 @@ export async function loadSupervisorState(env: NodeJS.ProcessEnv = process.env):
 
   let state: SupervisorState;
   try {
-    const previous = JSON.parse(await fs.readFile(paths.previousStateFile, "utf8")) as SupervisorStateV2;
-    if (previous.schemaVersion !== 2) throw new Error("unsupported previous state version");
+    const previous = JSON.parse(
+      await fs.readFile(paths.previousStateFile, "utf8"),
+    ) as SupervisorStateV2;
+    if (previous.schemaVersion !== 2)
+      throw new Error("unsupported previous state version");
     state = migrateStateV2(previous);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -48,13 +57,15 @@ export async function loadSupervisorState(env: NodeJS.ProcessEnv = process.env):
     state = {
       ...EMPTY_STATE,
       instances: legacy
-        ? [{
-            id: randomUUID(),
-            name: "default",
-            config: fromLegacyConfig(legacy),
-            currentRun: null,
-            history: [],
-          }]
+        ? [
+            {
+              id: randomUUID(),
+              name: "default",
+              config: fromLegacyConfig(legacy),
+              currentRun: null,
+              history: [],
+            },
+          ]
         : [],
       migratedLegacyConfig: true,
     };
@@ -69,7 +80,9 @@ export async function saveSupervisorState(
 ): Promise<void> {
   const paths = await ensureRuntimePaths(env);
   const temporary = `${paths.stateFile}.${process.pid}.${randomUUID()}.tmp`;
-  await fs.writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  await fs.writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, {
+    mode: 0o600,
+  });
   await fs.rename(temporary, paths.stateFile);
 }
 
@@ -85,18 +98,27 @@ export function workerRequestFile(runDir: string): string {
   return path.join(runDir, "request.json");
 }
 
-export async function loadWorkerState(runDir: string): Promise<WorkerState | null> {
+export async function loadWorkerState(
+  runDir: string,
+): Promise<WorkerState | null> {
   try {
-    return JSON.parse(await fs.readFile(workerStateFile(runDir), "utf8")) as WorkerState;
+    return JSON.parse(
+      await fs.readFile(workerStateFile(runDir), "utf8"),
+    ) as WorkerState;
   } catch {
     return null;
   }
 }
 
-export async function saveWorkerState(runDir: string, state: WorkerState): Promise<void> {
+export async function saveWorkerState(
+  runDir: string,
+  state: WorkerState,
+): Promise<void> {
   const file = workerStateFile(runDir);
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  await fs.writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  await fs.writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, {
+    mode: 0o600,
+  });
   await fs.rename(temporary, file);
 }
 
@@ -119,9 +141,13 @@ export async function pruneRunHistory(
   } catch {
     return;
   }
-  await Promise.all(entries
-    .filter((entry) => isSafeRunId(entry) && !keep.has(entry))
-    .map((entry) => fs.rm(path.join(runsDir, entry), { recursive: true, force: true })));
+  await Promise.all(
+    entries
+      .filter((entry) => isSafeRunId(entry) && !keep.has(entry))
+      .map((entry) =>
+        fs.rm(path.join(runsDir, entry), { recursive: true, force: true }),
+      ),
+  );
 }
 
 export async function deleteInstanceRuns(
@@ -131,13 +157,23 @@ export async function deleteInstanceRuns(
   const runIds = new Set(instance.history);
   if (instance.currentRun) runIds.add(instance.currentRun.runId);
   const runsDir = runtimePaths(env).runsDir;
-  await Promise.all([...runIds]
-    .filter(isSafeRunId)
-    .map((runId) => fs.rm(path.join(runsDir, runId), { recursive: true, force: true })));
+  await Promise.all(
+    [...runIds]
+      .filter(isSafeRunId)
+      .map((runId) =>
+        fs.rm(path.join(runsDir, runId), { recursive: true, force: true }),
+      ),
+  );
 }
 
 function dockerHostPort(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65_535) return value;
+  if (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 65_535
+  )
+    return value;
   if (typeof value !== "string") return null;
   const withoutProtocol = value.split("/", 1)[0] ?? "";
   const parts = withoutProtocol.split(":");
@@ -148,21 +184,27 @@ function dockerHostPort(value: unknown): number | null {
 
 function normalizeStateV3(parsed: Partial<SupervisorState>): SupervisorState {
   const instances = Array.isArray(parsed.instances)
-    ? parsed.instances.filter((item): item is InstanceRecord => Boolean(
-        item
-        && typeof item === "object"
-        && typeof item.id === "string"
-        && typeof item.name === "string"
-        && item.config,
-      )).map((instance) => ({
-        id: instance.id,
-        name: instance.name,
-        config: instance.config,
-        currentRun: instance.currentRun ?? null,
-        history: Array.isArray(instance.history)
-          ? instance.history.filter((item): item is string => typeof item === "string")
-          : [],
-      }))
+    ? parsed.instances
+        .filter((item): item is InstanceRecord =>
+          Boolean(
+            item &&
+            typeof item === "object" &&
+            typeof item.id === "string" &&
+            typeof item.name === "string" &&
+            item.config,
+          ),
+        )
+        .map((instance) => ({
+          id: instance.id,
+          name: instance.name,
+          config: instance.config,
+          currentRun: instance.currentRun ?? null,
+          history: Array.isArray(instance.history)
+            ? instance.history.filter(
+                (item): item is string => typeof item === "string",
+              )
+            : [],
+        }))
     : [];
   return {
     schemaVersion: 3,
@@ -173,14 +215,20 @@ function normalizeStateV3(parsed: Partial<SupervisorState>): SupervisorState {
 
 function migrateStateV2(previous: SupervisorStateV2): SupervisorState {
   const instances: InstanceRecord[] = [];
-  const currentConfig = previous.currentRun ? migrateLaunchConfig(previous.currentRun.config, 3000) : null;
+  const currentConfig = previous.currentRun
+    ? migrateLaunchConfig(previous.currentRun.config, 3000)
+    : null;
   if (previous.currentRun && currentConfig) {
     const id = randomUUID();
     instances.push({
       id,
       name: "default",
       config: currentConfig,
-      currentRun: { ...previous.currentRun, instanceId: id, config: currentConfig },
+      currentRun: {
+        ...previous.currentRun,
+        instanceId: id,
+        config: currentConfig,
+      },
       history: stringList(previous.history),
     });
   }
@@ -189,7 +237,9 @@ function migrateStateV2(previous: SupervisorStateV2): SupervisorState {
   if (savedConfig) {
     const current = instances[0];
     if (!current || !sameConfig(current.config, savedConfig)) {
-      const port = instances.some((instance) => instance.config.port === savedConfig.port)
+      const port = instances.some(
+        (instance) => instance.config.port === savedConfig.port,
+      )
         ? nextAvailablePort(instances)
         : savedConfig.port;
       instances.push({
@@ -209,7 +259,10 @@ function migrateStateV2(previous: SupervisorStateV2): SupervisorState {
   };
 }
 
-function migrateLaunchConfig(value: unknown, fallbackPort: number): LaunchConfig | null {
+function migrateLaunchConfig(
+  value: unknown,
+  fallbackPort: number,
+): LaunchConfig | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const config = value as Record<string, unknown>;
   if (config.mode === "git" && typeof config.path === "string" && config.path) {
@@ -225,14 +278,21 @@ function migrateLaunchConfig(value: unknown, fallbackPort: number): LaunchConfig
       quiet: config.quiet === true,
     };
   }
-  if (config.mode === "docker" && typeof config.course_path === "string" && config.course_path) {
+  if (
+    config.mode === "docker" &&
+    typeof config.course_path === "string" &&
+    config.course_path
+  ) {
     const port = dockerHostPort(config.port) ?? fallbackPort;
     return {
       mode: "docker",
       course_path: config.course_path,
       image: config.image === "latest" ? "latest" : "us-prod-live",
       port,
-      tmp_dir: typeof config.tmp_dir === "string" && config.tmp_dir ? config.tmp_dir : "/tmp",
+      tmp_dir:
+        typeof config.tmp_dir === "string" && config.tmp_dir
+          ? config.tmp_dir
+          : "/tmp",
       local_only: config.local_only === true,
       quiet: config.quiet === true,
     };
@@ -240,22 +300,34 @@ function migrateLaunchConfig(value: unknown, fallbackPort: number): LaunchConfig
   return null;
 }
 
-function fromLegacyConfig(config: GitConfig | Exclude<LaunchConfig, { mode: "git" }>): LaunchConfig {
+function fromLegacyConfig(
+  config: GitConfig | Exclude<LaunchConfig, { mode: "git" }>,
+): LaunchConfig {
   const migrated = migrateLaunchConfig(config, 3000);
   if (!migrated) throw new Error("legacy configuration is invalid");
   return migrated;
 }
 
 function validPort(value: unknown): number | null {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65_535 ? value : null;
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 65_535
+    ? value
+    : null;
 }
 
 function sameConfig(left: LaunchConfig, right: LaunchConfig): boolean {
-  return JSON.stringify({ ...left, quiet: false }) === JSON.stringify({ ...right, quiet: false });
+  return (
+    JSON.stringify({ ...left, quiet: false }) ===
+    JSON.stringify({ ...right, quiet: false })
+  );
 }
 
 function stringList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function isSafeRunId(value: string): boolean {

@@ -5,7 +5,9 @@ main().then(
     process.exitCode = status;
   },
   (error) => {
-    console.error(`prairielearn: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `prairielearn: ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exitCode = 1;
   },
 );

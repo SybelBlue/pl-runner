@@ -27,11 +27,15 @@ export class EventLog {
     await fs.mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 });
     const existing = await readEvents(this.file);
     this.seq = existing.at(-1)?.seq ?? 0;
-    this.tail = existing.filter((event) => this.outputFilter.keep(event)).slice(-MEMORY_TAIL_ENTRIES);
+    this.tail = existing
+      .filter((event) => this.outputFilter.keep(event))
+      .slice(-MEMORY_TAIL_ENTRIES);
   }
 
   append(source: LogSource, phase: string, rawMessage: string): Promise<void> {
-    const messages = sanitizeTerminalText(rawMessage).split(/\r?\n/).filter((line) => line.length > 0);
+    const messages = sanitizeTerminalText(rawMessage)
+      .split(/\r?\n/)
+      .filter((line) => line.length > 0);
     if (messages.length === 0) return this.writeQueue;
 
     this.writeQueue = this.writeQueue.then(async () => {
@@ -51,7 +55,10 @@ export class EventLog {
       }
       if (lines.length === 0) return;
       this.tail = this.tail.slice(-MEMORY_TAIL_ENTRIES);
-      await fs.appendFile(this.file, `${lines.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
+      await fs.appendFile(this.file, `${lines.join("\n")}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
       await capEventLog(this.file);
     });
     return this.writeQueue;
@@ -94,15 +101,26 @@ class OutputFilter {
       return true;
     }
 
-    if (/^\s*(?:Installed|Uninstalled)\s+\d+\s+packages?\s+in\b/.test(event.message)) {
+    if (
+      /^\s*(?:Installed|Uninstalled)\s+\d+\s+packages?\s+in\b/.test(
+        event.message,
+      )
+    ) {
       this.uvOutput = "installed";
       return true;
     }
-    if (this.uvOutput === "installed" && /^\s*Bytecode compiled\s+\d+\s+files?\s+in\b/.test(event.message)) {
+    if (
+      this.uvOutput === "installed" &&
+      /^\s*Bytecode compiled\s+\d+\s+files?\s+in\b/.test(event.message)
+    ) {
       return true;
     }
-    if (this.uvOutput === "installed" && /^\s*$/.test(event.message)) return false;
-    if (this.uvOutput === "installed" && /^\s*[+-](?:\s|$)/.test(event.message)) {
+    if (this.uvOutput === "installed" && /^\s*$/.test(event.message))
+      return false;
+    if (
+      this.uvOutput === "installed" &&
+      /^\s*[+-](?:\s|$)/.test(event.message)
+    ) {
       this.uvOutput = "package-changes";
       return false;
     }
@@ -113,7 +131,11 @@ class OutputFilter {
   }
 }
 
-export async function readEvents(file: string, limit = MEMORY_TAIL_ENTRIES, afterSeq = 0): Promise<RunEvent[]> {
+export async function readEvents(
+  file: string,
+  limit = MEMORY_TAIL_ENTRIES,
+  afterSeq = 0,
+): Promise<RunEvent[]> {
   try {
     const contents = await fs.readFile(file, "utf8");
     const events: RunEvent[] = [];
@@ -121,7 +143,8 @@ export async function readEvents(file: string, limit = MEMORY_TAIL_ENTRIES, afte
       if (!line) continue;
       try {
         const event = JSON.parse(line) as RunEvent;
-        if (typeof event.seq === "number" && event.seq > afterSeq) events.push(event);
+        if (typeof event.seq === "number" && event.seq > afterSeq)
+          events.push(event);
       } catch {
         // Ignore a partial final line while another process is appending.
       }

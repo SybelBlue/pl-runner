@@ -30,11 +30,11 @@ CLI ─────┴→ typed client ─→ (protocol/framing)      │       
 
 ## Protocol
 
-Supervisor protocol v2 uses newline-delimited JSON on a permission-restricted Unix-domain socket. Every request contains `protocol`, `id`, `type`, and `payload`; every response repeats the ID and contains either `result` or a structured `error`. Long-lived log connections bind to an instance and immutable run ID before receiving sequenced `log` events.
+Supervisor protocol v3 uses newline-delimited JSON on a permission-restricted Unix-domain socket. Every request contains `protocol`, `id`, `type`, and `payload`; every response repeats the ID and contains either `result` or a structured `error`. Long-lived log connections bind to an instance and immutable run ID before receiving sequenced `log` events.
 
-The supervisor supports handshake/capabilities, aggregate status, profile create/update/delete, host inspection, profile-scoped start/stop/restart, run-scoped log tail/subscription, approved Docker-daemon startup, and backend status/shutdown. The internal worker protocol remains v1 and supports status and stop so a v2 supervisor can recover workers launched before an upgrade.
+The supervisor supports handshake/capabilities, aggregate status, profile create/update/delete, host inspection, profile-scoped start/stop/restart, run-scoped log tail/subscription, approved Docker-daemon startup, and backend status/shutdown. The internal worker protocol remains v1 and supports status and stop so a v3 supervisor can recover workers launched before an upgrade.
 
-The envelope and operation-specific payloads are runtime-validated from the same operation map used for client-side TypeScript inference. A new client gracefully shuts down a legacy v1 supervisor, leaves its worker running, starts v2 on the same socket, migrates state, and reconnects to that worker.
+The envelope and operation-specific payloads are runtime-validated from the same operation map used for client-side TypeScript inference. A new client gracefully shuts down a legacy v1 or v2 supervisor, leaves its workers running, starts v3 on the same socket, migrates state, and reconnects to those workers.
 
 ## Lifecycle and recovery
 

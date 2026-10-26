@@ -36,7 +36,11 @@ export function runCommand(
       resolve({ status: 127, stdout, stderr });
     });
     child.on("close", (code, signal) => {
-      resolve({ status: signal ? signalStatus(signal) : (code ?? 1), stdout, stderr });
+      resolve({
+        status: signal ? signalStatus(signal) : (code ?? 1),
+        stdout,
+        stderr,
+      });
     });
     if (options.input !== undefined) {
       child.stdin.end(options.input);

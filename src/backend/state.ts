@@ -5,14 +5,27 @@ import { expandHome } from "../system/path.js";
 import type { DockerConfig, GitConfig, SavedConfig } from "../core/types.js";
 
 export function stateFilePath(env: NodeJS.ProcessEnv = process.env): string {
-  if (env.PRAIRIELEARN_PREVIOUS_CONFIG_FILE) return expandHome(env.PRAIRIELEARN_PREVIOUS_CONFIG_FILE);
+  if (env.PRAIRIELEARN_PREVIOUS_CONFIG_FILE)
+    return expandHome(env.PRAIRIELEARN_PREVIOUS_CONFIG_FILE);
   if (env.XDG_STATE_HOME) {
-    return path.join(expandHome(env.XDG_STATE_HOME), "prairielearn", "last-config.yaml");
+    return path.join(
+      expandHome(env.XDG_STATE_HOME),
+      "prairielearn",
+      "last-config.yaml",
+    );
   }
-  return path.join(expandHome("~"), ".local", "state", "prairielearn", "last-config.yaml");
+  return path.join(
+    expandHome("~"),
+    ".local",
+    "state",
+    "prairielearn",
+    "last-config.yaml",
+  );
 }
 
-export async function loadSavedConfig(file = stateFilePath()): Promise<SavedConfig | null> {
+export async function loadSavedConfig(
+  file = stateFilePath(),
+): Promise<SavedConfig | null> {
   try {
     const contents = await fs.readFile(file, "utf8");
     return parseConfigYaml(contents);
@@ -39,7 +52,10 @@ export function parseConfigYaml(contents: string): SavedConfig | null {
         path: requireString(values, "path"),
         branch: optionalString(values.get("branch")),
         port: optionalPort(values.get("port")) ?? 3000,
-        isolated_database: optionalBoolean(values.get("isolated_database"), false),
+        isolated_database: optionalBoolean(
+          values.get("isolated_database"),
+          false,
+        ),
         force_rebuild: requireBoolean(values, "force_rebuild"),
         local_only: requireBoolean(values, "local_only"),
         no_watch_upstream: requireBoolean(values, "no_watch_upstream"),
@@ -52,7 +68,9 @@ export function parseConfigYaml(contents: string): SavedConfig | null {
       const config: DockerConfig = {
         mode: "docker",
         course_path: requireString(values, "course_path"),
-        image: normalizeDockerImageTag(optionalString(values.get("image")) ?? undefined),
+        image: normalizeDockerImageTag(
+          optionalString(values.get("image")) ?? undefined,
+        ),
         port: optionalDockerHostPort(values.get("port")) ?? 3000,
         tmp_dir: requireString(values, "tmp_dir"),
         local_only: requireBoolean(values, "local_only"),
@@ -96,8 +114,10 @@ export function stringifyConfigYaml(config: SavedConfig): string {
 
 function parseScalar(raw: string): string | null {
   if (raw === "null" || raw === "~") return null;
-  if (raw.startsWith('"') && raw.endsWith('"')) return raw.slice(1, -1).replace(/\\"/g, '"');
-  if (raw.startsWith("'") && raw.endsWith("'")) return raw.slice(1, -1).replace(/''/g, "'");
+  if (raw.startsWith('"') && raw.endsWith('"'))
+    return raw.slice(1, -1).replace(/\\"/g, '"');
+  if (raw.startsWith("'") && raw.endsWith("'"))
+    return raw.slice(1, -1).replace(/''/g, "'");
   return raw;
 }
 
@@ -111,19 +131,28 @@ function optionalString(value: string | null | undefined): string | null {
   return value;
 }
 
-function requireString(values: Map<string, string | null>, key: string): string {
+function requireString(
+  values: Map<string, string | null>,
+  key: string,
+): string {
   const value = values.get(key);
   return typeof value === "string" ? value : "";
 }
 
-function requireBoolean(values: Map<string, string | null>, key: string): boolean {
+function requireBoolean(
+  values: Map<string, string | null>,
+  key: string,
+): boolean {
   const value = values.get(key);
   if (value === "true") return true;
   if (value === "false") return false;
   throw new Error(`invalid boolean: ${key}`);
 }
 
-function optionalBoolean(value: string | null | undefined, fallback: boolean): boolean {
+function optionalBoolean(
+  value: string | null | undefined,
+  fallback: boolean,
+): boolean {
   if (value === undefined || value === null || value === "") return fallback;
   if (value === "true") return true;
   if (value === "false") return false;
@@ -136,7 +165,9 @@ function optionalPort(value: string | null | undefined): number | null {
   return Number.isInteger(port) && port >= 1 && port <= 65_535 ? port : null;
 }
 
-function optionalDockerHostPort(value: string | null | undefined): number | null {
+function optionalDockerHostPort(
+  value: string | null | undefined,
+): number | null {
   if (value === undefined || value === null || value === "") return null;
   const parts = value.split("/", 1)[0]?.split(":") ?? [];
   return optionalPort(parts.length >= 2 ? parts.at(-2) : parts[0]);

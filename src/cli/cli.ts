@@ -6,7 +6,10 @@ import {
   waitForStart,
   waitForTerminal,
 } from "./client.js";
-import { DEFAULT_DOCKER_IMAGE_TAG, normalizeDockerImageTag } from "../worker/docker.js";
+import {
+  DEFAULT_DOCKER_IMAGE_TAG,
+  normalizeDockerImageTag,
+} from "../worker/docker.js";
 import {
   findInstanceByName,
   isActive,
@@ -26,7 +29,18 @@ import type {
 } from "../core/types.js";
 import { packageVersion } from "../system/version.js";
 
-type Command = "run" | "docker" | "start" | "status" | "stop" | "restart" | "logs" | "backend" | "help" | "version" | null;
+type Command =
+  | "run"
+  | "docker"
+  | "start"
+  | "status"
+  | "stop"
+  | "restart"
+  | "logs"
+  | "backend"
+  | "help"
+  | "version"
+  | null;
 
 export type Parsed = {
   command: Command;
@@ -72,18 +86,31 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       }
       return printStatus(parsed.json, parsed.instance);
     }
-    if (parsed.command === "status") return printStatus(parsed.json, parsed.instance);
+    if (parsed.command === "status")
+      return printStatus(parsed.json, parsed.instance);
     if (parsed.command === "run") return configureGitAndStart(parsed);
     if (parsed.command === "docker") return configureDockerAndStart(parsed);
     if (parsed.command === "start") {
       const status = await requestBackend("status.get", {});
-      const instance = resolveInstance(status, parsed.instance, isStartEligible, "start");
+      const instance = resolveInstance(
+        status,
+        parsed.instance,
+        isStartEligible,
+        "start",
+      );
       return startAndMaybeAttach(instance.id, parsed, false);
     }
     if (parsed.command === "stop") {
       const before = await requestBackend("status.get", {});
-      const instance = resolveInstance(before, parsed.instance, (item) => Boolean(item.run && isActive(item.run.state)), "stop");
-      const record = await requestBackend("instance.stop", { instanceId: instance.id });
+      const instance = resolveInstance(
+        before,
+        parsed.instance,
+        (item) => Boolean(item.run && isActive(item.run.state)),
+        "stop",
+      );
+      const record = await requestBackend("instance.stop", {
+        instanceId: instance.id,
+      });
       const status = record
         ? await waitForTerminal(instance.id, record.runId)
         : await requestBackend("status.get", {});
@@ -92,7 +119,12 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     }
     if (parsed.command === "restart") {
       const status = await requestBackend("status.get", {});
-      const instance = resolveInstance(status, parsed.instance, isRestartEligible, "restart");
+      const instance = resolveInstance(
+        status,
+        parsed.instance,
+        isRestartEligible,
+        "restart",
+      );
       return startAndMaybeAttach(instance.id, parsed, true);
     }
     if (parsed.command === "logs") return printLogs(parsed);
@@ -142,13 +174,20 @@ export function parseArgs(argv: string[]): Parsed {
     else if (arg === "--json") parsed.json = true;
     else if (arg === "--detach") parsed.detach = true;
     else if (arg === "--instance") parsed.instance = requireValue(arg, args);
-    else if (arg === "-h" || arg === "--help" || arg === "-v" || arg === "--version") continue;
+    else if (
+      arg === "-h" ||
+      arg === "--help" ||
+      arg === "-v" ||
+      arg === "--version"
+    )
+      continue;
     else throw new Error(`unknown option: ${arg}`);
   }
 
   while (args.length > 0) {
     const arg = args.shift()!;
-    if (arg === "-h" || arg === "--help" || arg === "-v" || arg === "--version") continue;
+    if (arg === "-h" || arg === "--help" || arg === "-v" || arg === "--version")
+      continue;
     if (arg === "--json") parsed.json = true;
     else if (arg === "--detach") parsed.detach = true;
     else if (arg === "--instance") parsed.instance = requireValue(arg, args);
@@ -156,27 +195,38 @@ export function parseArgs(argv: string[]): Parsed {
       parsed.options.quiet = true;
       parsed.docker.quiet = true;
     } else if (parsed.command === "run") {
-      if (arg === "-b" || arg === "--branch") parsed.options.branch = requireValue(arg, args);
-      else if (arg === "-f" || arg === "--force-rebuild") parsed.options.force_rebuild = true;
-      else if (arg === "-l" || arg === "--local-only") parsed.options.local_only = true;
-      else if (arg === "-p" || arg === "--path") parsed.options.path = requireValue(arg, args);
+      if (arg === "-b" || arg === "--branch")
+        parsed.options.branch = requireValue(arg, args);
+      else if (arg === "-f" || arg === "--force-rebuild")
+        parsed.options.force_rebuild = true;
+      else if (arg === "-l" || arg === "--local-only")
+        parsed.options.local_only = true;
+      else if (arg === "-p" || arg === "--path")
+        parsed.options.path = requireValue(arg, args);
       else if (arg === "--port") parsed.options.port = requirePort(arg, args);
-      else if (arg === "--isolated-database") parsed.options.isolated_database = true;
-      else if (arg === "-w" || arg === "--no-watch-upstream") parsed.options.no_watch_upstream = true;
+      else if (arg === "--isolated-database")
+        parsed.options.isolated_database = true;
+      else if (arg === "-w" || arg === "--no-watch-upstream")
+        parsed.options.no_watch_upstream = true;
       else if (arg === "--allow-pull-failure") parsed.allowPullFailure = true;
       else throw new Error(`unknown run option: ${arg}`);
     } else if (parsed.command === "docker") {
-      if (arg === "-l" || arg === "--local-only") parsed.docker.local_only = true;
+      if (arg === "-l" || arg === "--local-only")
+        parsed.docker.local_only = true;
       else if (arg === "--image") parsed.docker.image = requireValue(arg, args);
       else if (arg === "--port") parsed.docker.port = requirePort(arg, args);
-      else if (arg === "--tmp-dir") parsed.docker.tmp_dir = requireValue(arg, args);
+      else if (arg === "--tmp-dir")
+        parsed.docker.tmp_dir = requireValue(arg, args);
       else if (arg === "--start-docker") parsed.startDockerDaemon = true;
-      else if (!arg.startsWith("-") && parsed.docker.course_path === undefined) parsed.docker.course_path = arg;
+      else if (!arg.startsWith("-") && parsed.docker.course_path === undefined)
+        parsed.docker.course_path = arg;
       else throw new Error(`unknown docker option: ${arg}`);
     } else if (parsed.command === "logs") {
       if (arg === "-f" || arg === "--follow") parsed.follow = true;
-      else if (arg === "--tail") parsed.tail = requirePositiveInteger(arg, args);
-      else if (arg === "--stream") parsed.stream = requireStream(requireValue(arg, args));
+      else if (arg === "--tail")
+        parsed.tail = requirePositiveInteger(arg, args);
+      else if (arg === "--stream")
+        parsed.stream = requireStream(requireValue(arg, args));
       else throw new Error(`unknown logs option: ${arg}`);
     } else if (parsed.command === "backend") {
       if (arg === "status" || arg === "stop") parsed.backendAction = arg;
@@ -197,10 +247,17 @@ export function parseArgs(argv: string[]): Parsed {
 
 async function configureGitAndStart(parsed: Parsed): Promise<number> {
   const path = parsed.options.path ?? process.env.PRAIRIELEARN_PATH ?? "";
-  if (!path) throw new RemoteError("INVALID_CONFIG", "pass --path or set PRAIRIELEARN_PATH");
+  if (!path)
+    throw new RemoteError(
+      "INVALID_CONFIG",
+      "pass --path or set PRAIRIELEARN_PATH",
+    );
   const status = await requestBackend("status.get", {});
   const target = resolveConfigTarget(status, parsed.instance);
-  const port = parsed.options.port ?? target.instance?.config.port ?? requireAvailablePort(status.instances);
+  const port =
+    parsed.options.port ??
+    target.instance?.config.port ??
+    requireAvailablePort(status.instances);
   const config: GitLaunchConfig = {
     mode: "git",
     path: resolvePath(path),
@@ -219,7 +276,10 @@ async function configureGitAndStart(parsed: Parsed): Promise<number> {
 async function configureDockerAndStart(parsed: Parsed): Promise<number> {
   const status = await requestBackend("status.get", {});
   const target = resolveConfigTarget(status, parsed.instance);
-  const port = parsed.docker.port ?? target.instance?.config.port ?? requireAvailablePort(status.instances);
+  const port =
+    parsed.docker.port ??
+    target.instance?.config.port ??
+    requireAvailablePort(status.instances);
   const config: DockerConfig = {
     mode: "docker",
     course_path: resolvePath(parsed.docker.course_path ?? "."),
@@ -235,17 +295,27 @@ async function configureDockerAndStart(parsed: Parsed): Promise<number> {
 
 type ConfigTarget = { instance: InstanceStatus | null; name: string };
 
-function resolveConfigTarget(status: SupervisorStatus, selector: string | undefined): ConfigTarget {
+function resolveConfigTarget(
+  status: SupervisorStatus,
+  selector: string | undefined,
+): ConfigTarget {
   if (selector) {
     const instance = findInstanceByName(status.instances, selector);
-    return { instance: instance ?? null, name: instance?.name ?? selector.trim() };
+    return {
+      instance: instance ?? null,
+      name: instance?.name ?? selector.trim(),
+    };
   }
   if (status.instances.length === 0) return { instance: null, name: "default" };
-  if (status.instances.length === 1) return { instance: status.instances[0]!, name: status.instances[0]!.name };
+  if (status.instances.length === 1)
+    return { instance: status.instances[0]!, name: status.instances[0]!.name };
   throw ambiguityError("configure", status.instances);
 }
 
-async function saveConfigTarget(target: ConfigTarget, config: GitLaunchConfig | DockerConfig): Promise<InstanceStatus> {
+async function saveConfigTarget(
+  target: ConfigTarget,
+  config: GitLaunchConfig | DockerConfig,
+): Promise<InstanceStatus> {
   if (target.instance) {
     return requestBackend("instance.update", {
       instanceId: target.instance.id,
@@ -256,22 +326,41 @@ async function saveConfigTarget(target: ConfigTarget, config: GitLaunchConfig | 
   return requestBackend("instance.create", { name: target.name, config });
 }
 
-async function startAndMaybeAttach(instanceId: string, parsed: Parsed, restart: boolean): Promise<number> {
-  const record = await requestBackend(restart ? "instance.restart" : "instance.start", {
-    instanceId,
-    allowPullFailure: parsed.allowPullFailure,
-    startDockerDaemon: parsed.startDockerDaemon,
-  });
+async function startAndMaybeAttach(
+  instanceId: string,
+  parsed: Parsed,
+  restart: boolean,
+): Promise<number> {
+  const record = await requestBackend(
+    restart ? "instance.restart" : "instance.start",
+    {
+      instanceId,
+      allowPullFailure: parsed.allowPullFailure,
+      startDockerDaemon: parsed.startDockerDaemon,
+    },
+  );
   if (parsed.detach) {
     const status = await waitForStart(instanceId, record.runId);
     printControlResult(status, parsed.json, instanceId);
-    const run = status.instances.find((instance) => instance.id === instanceId)?.run;
+    const run = status.instances.find(
+      (instance) => instance.id === instanceId,
+    )?.run;
     return run?.state === "running" ? 0 : (run?.exitCode ?? 1);
   }
-  return attachToRun(instanceId, record.runId, parsed.json, parsed.options.quiet || parsed.docker.quiet === true);
+  return attachToRun(
+    instanceId,
+    record.runId,
+    parsed.json,
+    parsed.options.quiet || parsed.docker.quiet === true,
+  );
 }
 
-async function attachToRun(instanceId: string, runId: string, json: boolean, quiet: boolean): Promise<number> {
+async function attachToRun(
+  instanceId: string,
+  runId: string,
+  json: boolean,
+  quiet: boolean,
+): Promise<number> {
   const initial = await requestBackend("logs.tail", {
     instanceId,
     runId,
@@ -284,10 +373,16 @@ async function attachToRun(instanceId: string, runId: string, json: boolean, qui
     lastSeq = Math.max(lastSeq, event.seq);
     if (!quiet) printEvent(event, json);
   }
-  const subscription = await subscribeLogs(instanceId, runId, lastSeq, "all", (event) => {
-    lastSeq = Math.max(lastSeq, event.seq);
-    if (!quiet) printEvent(event, json);
-  });
+  const subscription = await subscribeLogs(
+    instanceId,
+    runId,
+    lastSeq,
+    "all",
+    (event) => {
+      lastSeq = Math.max(lastSeq, event.seq);
+      if (!quiet) printEvent(event, json);
+    },
+  );
   let interrupted = false;
   const onSigint = () => {
     interrupted = true;
@@ -297,8 +392,15 @@ async function attachToRun(instanceId: string, runId: string, json: boolean, qui
   try {
     while (!interrupted) {
       const status = await requestBackend("status.get", {});
-      const run = status.instances.find((instance) => instance.id === instanceId)?.run;
-      if (!run || run.runId !== runId || run.state === "stopped" || run.state === "failed") {
+      const run = status.instances.find(
+        (instance) => instance.id === instanceId,
+      )?.run;
+      if (
+        !run ||
+        run.runId !== runId ||
+        run.state === "stopped" ||
+        run.state === "failed"
+      ) {
         subscription.close();
         return run?.exitCode ?? 0;
       }
@@ -312,14 +414,21 @@ async function attachToRun(instanceId: string, runId: string, json: boolean, qui
 
 async function printStatus(json: boolean, selector?: string): Promise<number> {
   const status = await requestBackend("status.get", {});
-  const instance = selector ? resolveInstance(status, selector, () => true, "show status for") : undefined;
+  const instance = selector
+    ? resolveInstance(status, selector, () => true, "show status for")
+    : undefined;
   printControlResult(status, json, instance?.id);
   return 0;
 }
 
 async function printLogs(parsed: Parsed): Promise<number> {
   const status = await requestBackend("status.get", {});
-  const instance = resolveInstance(status, parsed.instance, (item) => Boolean(item.run), "show logs for");
+  const instance = resolveInstance(
+    status,
+    parsed.instance,
+    (item) => Boolean(item.run),
+    "show logs for",
+  );
   const run = instance.run!;
   const events = await requestBackend("logs.tail", {
     instanceId: instance.id,
@@ -333,8 +442,15 @@ async function printLogs(parsed: Parsed): Promise<number> {
     lastSeq = Math.max(lastSeq, event.seq);
     printEvent(event, parsed.json);
   }
-  if (!parsed.follow || run.state === "stopped" || run.state === "failed") return 0;
-  const subscription = await subscribeLogs(instance.id, run.runId, lastSeq, parsed.stream, (event) => printEvent(event, parsed.json));
+  if (!parsed.follow || run.state === "stopped" || run.state === "failed")
+    return 0;
+  const subscription = await subscribeLogs(
+    instance.id,
+    run.runId,
+    lastSeq,
+    parsed.stream,
+    (event) => printEvent(event, parsed.json),
+  );
   let interrupted = false;
   const onSigint = () => {
     interrupted = true;
@@ -344,8 +460,15 @@ async function printLogs(parsed: Parsed): Promise<number> {
   try {
     while (!interrupted) {
       const current = await requestBackend("status.get", {});
-      const currentRun = current.instances.find((item) => item.id === instance.id)?.run;
-      if (!currentRun || currentRun.runId !== run.runId || currentRun.state === "stopped" || currentRun.state === "failed") {
+      const currentRun = current.instances.find(
+        (item) => item.id === instance.id,
+      )?.run;
+      if (
+        !currentRun ||
+        currentRun.runId !== run.runId ||
+        currentRun.state === "stopped" ||
+        currentRun.state === "failed"
+      ) {
         subscription.close();
         return 0;
       }
@@ -361,19 +484,41 @@ async function backendCommand(parsed: Parsed): Promise<number> {
   const running = await backendIsRunning();
   if (parsed.backendAction === "status") {
     if (!running) {
-      console.log(parsed.json ? JSON.stringify({ running: false }) : "backend: stopped");
+      console.log(
+        parsed.json ? JSON.stringify({ running: false }) : "backend: stopped",
+      );
       return 0;
     }
-    const status = await requestBackend("backend.status", {}, { autoStart: false });
-    console.log(parsed.json ? JSON.stringify(status.backend) : `backend: running (pid ${status.backend.pid}, protocol ${status.backend.protocolVersion})`);
+    const status = await requestBackend(
+      "backend.status",
+      {},
+      { autoStart: false },
+    );
+    console.log(
+      parsed.json
+        ? JSON.stringify(status.backend)
+        : `backend: running (pid ${status.backend.pid}, protocol ${status.backend.protocolVersion})`,
+    );
     return 0;
   }
   if (!running) {
-    console.log(parsed.json ? JSON.stringify({ stopped: true, alreadyStopped: true }) : "backend: already stopped");
+    console.log(
+      parsed.json
+        ? JSON.stringify({ stopped: true, alreadyStopped: true })
+        : "backend: already stopped",
+    );
     return 0;
   }
-  const result = await requestBackend("backend.shutdown", {}, { autoStart: false });
-  console.log(parsed.json ? JSON.stringify(result) : "backend: stopped (managed instances preserved)");
+  const result = await requestBackend(
+    "backend.shutdown",
+    {},
+    { autoStart: false },
+  );
+  console.log(
+    parsed.json
+      ? JSON.stringify(result)
+      : "backend: stopped (managed instances preserved)",
+  );
   return 0;
 }
 
@@ -385,16 +530,27 @@ function resolveInstance(
 ): InstanceStatus {
   if (selector) {
     const instance = findInstanceByName(status.instances, selector);
-    if (!instance) throw new RemoteError("INSTANCE_NOT_FOUND", `instance not found: ${selector}`);
+    if (!instance)
+      throw new RemoteError(
+        "INSTANCE_NOT_FOUND",
+        `instance not found: ${selector}`,
+      );
     return instance;
   }
   const candidates = status.instances.filter(eligible);
   if (candidates.length === 1) return candidates[0]!;
-  if (candidates.length === 0) throw new RemoteError("NOT_RUNNING", `no instance is eligible to ${action}`);
+  if (candidates.length === 0)
+    throw new RemoteError(
+      "NOT_RUNNING",
+      `no instance is eligible to ${action}`,
+    );
   throw ambiguityError(action, candidates);
 }
 
-function ambiguityError(action: string, instances: InstanceStatus[]): RemoteError {
+function ambiguityError(
+  action: string,
+  instances: InstanceStatus[],
+): RemoteError {
   return new RemoteError(
     "INVALID_CONFIG",
     `multiple instances can ${action}; pass --instance <name> (${instances.map((instance) => instance.name).join(", ")})`,
@@ -405,13 +561,20 @@ function requireAvailablePort(instances: InstanceStatus[]): number {
   try {
     return nextAvailablePort(instances);
   } catch (error) {
-    if (error instanceof RangeError) throw new RemoteError("INVALID_CONFIG", error.message);
+    if (error instanceof RangeError)
+      throw new RemoteError("INVALID_CONFIG", error.message);
     throw error;
   }
 }
 
-function printControlResult(status: SupervisorStatus, json: boolean, instanceId?: string): void {
-  const instances = instanceId ? status.instances.filter((instance) => instance.id === instanceId) : status.instances;
+function printControlResult(
+  status: SupervisorStatus,
+  json: boolean,
+  instanceId?: string,
+): void {
+  const instances = instanceId
+    ? status.instances.filter((instance) => instance.id === instanceId)
+    : status.instances;
   if (json) {
     console.log(JSON.stringify(instanceId ? { ...status, instances } : status));
     return;
@@ -423,10 +586,14 @@ function printControlResult(status: SupervisorStatus, json: boolean, instanceId?
   }
   for (const instance of instances) {
     const mode = instance.config.mode;
-    const target = mode === "git" ? instance.config.path : instance.config.course_path;
+    const target =
+      mode === "git" ? instance.config.path : instance.config.course_path;
     const run = instance.run;
-    console.log(`instance ${instance.name}: ${run?.state ?? "stopped"} (${mode}, ${target}, localhost:${instance.config.port})`);
-    if (run?.exitCode !== null && run?.exitCode !== undefined) console.log(`  exit: ${run.exitCode}`);
+    console.log(
+      `instance ${instance.name}: ${run?.state ?? "stopped"} (${mode}, ${target}, localhost:${instance.config.port})`,
+    );
+    if (run?.exitCode !== null && run?.exitCode !== undefined)
+      console.log(`  exit: ${run.exitCode}`);
     if (run?.errorMessage) console.log(`  error: ${run.errorMessage}`);
   }
 }
@@ -451,13 +618,15 @@ function requireValue(option: string, args: string[]): string {
 
 function requirePositiveInteger(option: string, args: string[]): number {
   const value = Number(requireValue(option, args));
-  if (!Number.isInteger(value) || value < 1) throw new Error(`${option} requires a positive integer`);
+  if (!Number.isInteger(value) || value < 1)
+    throw new Error(`${option} requires a positive integer`);
   return value;
 }
 
 function requirePort(option: string, args: string[]): number {
   const port = requirePositiveInteger(option, args);
-  if (port > 65_535) throw new Error(`${option} requires an integer from 1 to 65535`);
+  if (port > 65_535)
+    throw new Error(`${option} requires an integer from 1 to 65535`);
   return port;
 }
 
@@ -467,7 +636,18 @@ function requireStream(value: string): "all" | "stdout" | "stderr" {
 }
 
 function isCommand(value: string): value is Exclude<Command, null> {
-  return ["run", "docker", "start", "status", "stop", "restart", "logs", "backend", "help", "version"].includes(value);
+  return [
+    "run",
+    "docker",
+    "start",
+    "status",
+    "stop",
+    "restart",
+    "logs",
+    "backend",
+    "help",
+    "version",
+  ].includes(value);
 }
 
 function delay(ms: number): Promise<void> {

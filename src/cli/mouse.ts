@@ -26,7 +26,8 @@ export function createMouseWheelParser(): {
 
   return {
     push(chunk) {
-      pending += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+      pending +=
+        typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
       const events: MouseWheelEvent[] = [];
       let match: RegExpExecArray | null;
       let consumedThrough = 0;
@@ -38,7 +39,11 @@ export function createMouseWheelParser(): {
         const wheelDirection = button & 3;
         const isWheel = (button & 64) !== 0;
         const isPress = match[4] === "M";
-        if (isWheel && isPress && (wheelDirection === 0 || wheelDirection === 1)) {
+        if (
+          isWheel &&
+          isPress &&
+          (wheelDirection === 0 || wheelDirection === 1)
+        ) {
           events.push({
             direction: wheelDirection === 0 ? "up" : "down",
             x: Number(match[2]),
@@ -56,12 +61,17 @@ export function createMouseWheelParser(): {
   };
 }
 
-export function mouseEventIsInside(event: MouseWheelEvent, region: MouseRegion): boolean {
+export function mouseEventIsInside(
+  event: MouseWheelEvent,
+  region: MouseRegion,
+): boolean {
   // Terminal mouse coordinates are one-based; Ink layout coordinates are zero-based.
-  return event.x >= region.left + 1
-    && event.x <= region.left + region.width
-    && event.y >= region.top + 1
-    && event.y <= region.top + region.height;
+  return (
+    event.x >= region.left + 1 &&
+    event.x <= region.left + region.width &&
+    event.y >= region.top + 1 &&
+    event.y <= region.top + region.height
+  );
 }
 
 export function useMouseWheel(

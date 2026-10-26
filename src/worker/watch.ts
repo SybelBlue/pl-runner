@@ -15,7 +15,9 @@ export async function startUpstreamWatch(
 ): Promise<WatchHandle | null> {
   const upstream = await upstreamRef(cwd);
   if (!upstream) {
-    logger.warn("upstream watch disabled: current branch has no configured upstream.");
+    logger.warn(
+      "upstream watch disabled: current branch has no configured upstream.",
+    );
     return null;
   }
 

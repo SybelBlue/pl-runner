@@ -28,39 +28,74 @@ export async function writeEffectivePrairieLearnConfig(options: {
       ];
   let config: Record<string, unknown> = {};
   for (const sourcePath of sourcePaths) {
-    const source = await readConfigObject(sourcePath, Boolean(env.PL_CONFIG_PATH));
+    const source = await readConfigObject(
+      sourcePath,
+      Boolean(env.PL_CONFIG_PATH),
+    );
     if (source) config = deepMerge(config, source);
   }
 
-  const databaseName = options.isolatedDatabase ? isolatedDatabaseName(options.instanceId) : null;
+  const databaseName = options.isolatedDatabase
+    ? isolatedDatabaseName(options.instanceId)
+    : null;
   config.serverPort = String(options.port);
   if (databaseName) config.postgresqlDatabase = databaseName;
 
   const configPath = path.join(options.runDir, "prairielearn-config.json");
-  await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, {
+    mode: 0o600,
+  });
   return { path: configPath, databaseName };
 }
 
-export async function ensureIsolatedDatabase(databaseName: string, logger: Logger): Promise<void> {
+export async function ensureIsolatedDatabase(
+  databaseName: string,
+  logger: Logger,
+): Promise<void> {
   const query = `SELECT 1 FROM pg_database WHERE datname = '${databaseName.replaceAll("'", "''")}'`;
-  const check = await runCommand("psql", ["-U", "postgres", "-d", "postgres", "-Atqc", query]);
-  if (check.status === 127) throw new Error("isolated database requires the psql command");
-  if (check.status !== 0) throw new Error(check.stderr.trim() || "could not inspect PostgreSQL databases");
+  const check = await runCommand("psql", [
+    "-U",
+    "postgres",
+    "-d",
+    "postgres",
+    "-Atqc",
+    query,
+  ]);
+  if (check.status === 127)
+    throw new Error("isolated database requires the psql command");
+  if (check.status !== 0)
+    throw new Error(
+      check.stderr.trim() || "could not inspect PostgreSQL databases",
+    );
   if (check.stdout.trim() === "1") return;
 
   logger.info(`creating isolated PostgreSQL database ${databaseName}...`);
   const create = await runCommand("createdb", ["-U", "postgres", databaseName]);
   if (create.status === 0) return;
-  if (create.status === 127) throw new Error("isolated database requires the createdb command");
+  if (create.status === 127)
+    throw new Error("isolated database requires the createdb command");
 
   // A concurrent creator may have won the race. Verify before reporting failure.
-  const recheck = await runCommand("psql", ["-U", "postgres", "-d", "postgres", "-Atqc", query]);
+  const recheck = await runCommand("psql", [
+    "-U",
+    "postgres",
+    "-d",
+    "postgres",
+    "-Atqc",
+    query,
+  ]);
   if (recheck.status === 0 && recheck.stdout.trim() === "1") return;
-  throw new Error(create.stderr.trim() || `could not create PostgreSQL database ${databaseName}`);
+  throw new Error(
+    create.stderr.trim() ||
+      `could not create PostgreSQL database ${databaseName}`,
+  );
 }
 
 function isolatedDatabaseName(instanceId: string): string {
-  const suffix = instanceId.toLowerCase().replaceAll(/[^a-z0-9_]/g, "_").slice(0, 45);
+  const suffix = instanceId
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9_]/g, "_")
+    .slice(0, 45);
   return `prairielearn_pl_runner_${suffix}`;
 }
 
@@ -69,12 +104,16 @@ function resolveConfigPath(input: string, cwd: string): string {
   return path.isAbsolute(expanded) ? expanded : path.resolve(cwd, expanded);
 }
 
-async function readConfigObject(file: string, required: boolean): Promise<Record<string, unknown> | null> {
+async function readConfigObject(
+  file: string,
+  required: boolean,
+): Promise<Record<string, unknown> | null> {
   let contents: string;
   try {
     contents = await fs.readFile(file, "utf8");
   } catch (error) {
-    if (!required && (error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if (!required && (error as NodeJS.ErrnoException).code === "ENOENT")
+      return null;
     throw error;
   }
   const parsed = JSON.parse(contents) as unknown;
@@ -84,11 +123,15 @@ async function readConfigObject(file: string, required: boolean): Promise<Record
   return parsed as Record<string, unknown>;
 }
 
-function deepMerge(left: Record<string, unknown>, right: Record<string, unknown>): Record<string, unknown> {
+function deepMerge(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...left };
   for (const [key, value] of Object.entries(right)) {
     const current = merged[key];
-    merged[key] = isRecord(current) && isRecord(value) ? deepMerge(current, value) : value;
+    merged[key] =
+      isRecord(current) && isRecord(value) ? deepMerge(current, value) : value;
   }
   return merged;
 }
