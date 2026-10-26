@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { render } from "ink-testing-library";
-import { ConfigView, StatusLine, configFields, visibleLogEvents } from "../src/tui.tsx";
+import {
+  branchSuggestions,
+  ConfigView,
+  StatusLine,
+  configFields,
+  visibleLogEvents,
+} from "../src/tui.tsx";
 import type { LaunchConfig, RunEvent, SupervisorStatus } from "../src/types.ts";
 
 const gitConfig: LaunchConfig = {
@@ -52,6 +58,49 @@ test("renders backend-driven configuration details", () => {
   assert.match(frame, /Configuration · git/);
   assert.match(frame, /PrairieLearn path: \/PrairieLearn/);
   assert.match(frame, /Available branches: main, feature/);
+});
+
+test("offers repository branches while editing the branch field", () => {
+  const fields = configFields(gitConfig);
+  const view = render(<ConfigView
+    draft={{ ...gitConfig, branch: null }}
+    fields={fields}
+    fieldIndex={1}
+    editing={{ key: "branch", value: "feat", suggestionIndex: 0 }}
+    hostInfo={{
+      currentBranch: "main",
+      localBranches: ["main", "feature/local"],
+      remoteBranches: ["feature/remote"],
+    }}
+    error={null}
+  />);
+  const frame = view.lastFrame() ?? "";
+  assert.match(frame, /feature\/local · local/);
+  assert.match(frame, /feature\/remote · origin/);
+  assert.match(frame, /Use “feat” as branch\/ref · custom/);
+});
+
+test("filters and classifies branch autocomplete suggestions", () => {
+  const hostInfo = {
+    currentBranch: "main",
+    localBranches: ["main", "feature/local", "shared"],
+    remoteBranches: ["shared", "release"],
+  };
+
+  assert.deepEqual(branchSuggestions(hostInfo, "rel"), [
+    { label: "release", value: "release", hint: "origin" },
+    { label: "Use “rel” as branch/ref", value: "rel", hint: "custom" },
+  ]);
+  assert.deepEqual(branchSuggestions(hostInfo, "origin/release"), [
+    { label: "release", value: "release", hint: "origin" },
+  ]);
+  assert.deepEqual(branchSuggestions(hostInfo, "main"), [
+    { label: "Current branch (main)", value: "", hint: "current" },
+    { label: "Use “main” as branch/ref", value: "main", hint: "custom" },
+  ]);
+  assert.deepEqual(branchSuggestions(hostInfo, "topic/new"), [
+    { label: "Use “topic/new” as branch/ref", value: "topic/new", hint: "custom" },
+  ]);
 });
 
 test("filters and scrolls the merged log model", () => {

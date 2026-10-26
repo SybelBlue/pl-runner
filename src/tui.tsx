@@ -17,6 +17,18 @@ export type ConfigField = {
   choices?: string[];
 };
 
+export type EditingField = {
+  key: string;
+  value: string;
+  suggestionIndex: number;
+};
+
+export type BranchSuggestion = {
+  label: string;
+  value: string;
+  hint: "current" | "local" | "origin" | "custom";
+};
+
 const defaultGitConfig: LaunchConfig = {
   mode: "git",
   path: process.env.PRAIRIELEARN_PATH ?? "",
@@ -46,7 +58,7 @@ function App(): React.ReactElement {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [draft, setDraft] = useState<LaunchConfig>(defaultGitConfig);
   const [fieldIndex, setFieldIndex] = useState(0);
-  const [editing, setEditing] = useState<{ key: string; value: string } | null>(null);
+  const [editing, setEditing] = useState<EditingField | null>(null);
   const [hostInfo, setHostInfo] = useState<Record<string, unknown> | null>(null);
 
   const refresh = async () => {
@@ -109,14 +121,26 @@ function App(): React.ReactElement {
   useInput((input, key) => {
     if (view === "config") {
       if (editing) {
+        const editingBranch = draft.mode === "git" && editing.key === "branch";
+        const suggestions = editingBranch ? branchSuggestions(hostInfo, editing.value) : [];
         if (key.escape) setEditing(null);
         else if (key.return) {
-          setDraft(updateTextField(draft, editing.key, editing.value));
+          const suggestion = suggestions[Math.min(editing.suggestionIndex, suggestions.length - 1)];
+          setDraft(updateTextField(draft, editing.key, suggestion?.value ?? editing.value));
           setEditing(null);
+        } else if (editingBranch && (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow || key.tab)) {
+          setEditing((current) => {
+            if (!current || suggestions.length === 0) return current;
+            const direction = key.upArrow || key.leftArrow ? -1 : 1;
+            return {
+              ...current,
+              suggestionIndex: (current.suggestionIndex + direction + suggestions.length) % suggestions.length,
+            };
+          });
         } else if (key.backspace || key.delete) {
-          setEditing({ ...editing, value: editing.value.slice(0, -1) });
+          setEditing({ ...editing, value: editing.value.slice(0, -1), suggestionIndex: 0 });
         } else if (!key.ctrl && !key.meta && input) {
-          setEditing({ ...editing, value: editing.value + input });
+          setEditing({ ...editing, value: editing.value + input, suggestionIndex: 0 });
         }
         return;
       }
@@ -138,7 +162,7 @@ function App(): React.ReactElement {
         const field = fields[fieldIndex];
         if (!field) return;
         if (field.kind === "text") {
-          setEditing({ key: field.key, value: displayFieldValue(draft, field.key) });
+          setEditing({ key: field.key, value: displayFieldValue(draft, field.key), suggestionIndex: 0 });
         } else {
           setDraft(toggleField(draft, field));
         }
@@ -220,10 +244,14 @@ export function ConfigView(props: {
   draft: LaunchConfig;
   fields: ConfigField[];
   fieldIndex: number;
-  editing: { key: string; value: string } | null;
+  editing: EditingField | null;
   hostInfo: Record<string, unknown> | null;
   error: string | null;
 }): React.ReactElement {
+  const suggestions = props.editing?.key === "branch"
+    ? branchSuggestions(props.hostInfo, props.editing.value)
+    : [];
+  const suggestionIndex = Math.min(props.editing?.suggestionIndex ?? 0, suggestions.length - 1);
   return <Box flexDirection="column">
     <Text bold color="cyan">Configuration · {props.draft.mode}</Text>
     <Text dimColor>m switch mode · ↑/↓ select · Enter edit/toggle · s save · q cancel</Text>
@@ -234,6 +262,14 @@ export function ConfigView(props: {
         </Text>
       ))}
     </Box>
+    {props.editing?.key === "branch" ? <Box marginLeft={2} flexDirection="column">
+      <Text dimColor>Type to filter · arrow keys or Tab select · Enter accept</Text>
+      {suggestions.map((suggestion, index) => (
+        <Text key={`${suggestion.hint}:${suggestion.value}`} color={index === suggestionIndex ? "cyan" : undefined}>
+          {index === suggestionIndex ? "›" : " "} {suggestion.label} <Text dimColor>· {suggestion.hint}</Text>
+        </Text>
+      ))}
+    </Box> : null}
     {props.hostInfo ? <Box marginTop={1} flexDirection="column">
       <Text dimColor>Network: {props.hostInfo.internetAvailable ? "online" : "offline"}</Text>
       <Text dimColor>Dependencies: {formatDependencies(props.hostInfo.dependencies)}</Text>
@@ -284,7 +320,10 @@ function displayFieldValue(config: LaunchConfig, key: string): string {
 }
 
 function updateTextField(config: LaunchConfig, key: string, value: string): LaunchConfig {
-  if (config.mode === "git" && key === "branch") return { ...config, branch: value || null };
+  if (config.mode === "git" && key === "branch") {
+    const branch = value.trim().replace(/^origin\//, "");
+    return { ...config, branch: branch || null };
+  }
   return { ...config, [key]: value } as LaunchConfig;
 }
 
@@ -316,6 +355,42 @@ function formatBranches(info: Record<string, unknown>): string {
   const remote = Array.isArray(info.remoteBranches) ? info.remoteBranches : [];
   const branches = [...new Set([...local, ...remote].map(String))].slice(0, 8);
   return branches.length > 0 ? branches.join(", ") : "none detected";
+}
+
+export function branchSuggestions(
+  info: Record<string, unknown> | null,
+  query: string,
+): BranchSuggestion[] {
+  const current = typeof info?.currentBranch === "string" ? info.currentBranch : null;
+  const local = stringList(info?.localBranches);
+  const remote = stringList(info?.remoteBranches);
+  const branchNames = [...new Set([...local, ...remote])].filter((branch) => branch !== current);
+  const candidates: Array<BranchSuggestion & { searchable: string }> = [
+    {
+      label: current ? `Current branch (${current})` : "Current branch",
+      value: "",
+      hint: "current",
+      searchable: `current branch ${current ?? ""}`,
+    },
+    ...branchNames.map((branch): BranchSuggestion & { searchable: string } => ({
+      label: branch,
+      value: branch,
+      hint: local.includes(branch) ? "local" : "origin",
+      searchable: branch,
+    })),
+  ];
+  const normalizedQuery = query.trim().replace(/^origin\//, "");
+  const needle = normalizedQuery.toLocaleLowerCase();
+  const matching = candidates.filter((candidate) => !needle || candidate.searchable.toLocaleLowerCase().includes(needle));
+  const custom: BranchSuggestion[] = normalizedQuery && !branchNames.includes(normalizedQuery)
+    ? [{ label: `Use “${normalizedQuery}” as branch/ref`, value: normalizedQuery, hint: "custom" }]
+    : [];
+  const visibleMatching = matching.slice(0, custom.length > 0 ? 7 : 8);
+  return [...visibleMatching, ...custom].map(({ label, value, hint }) => ({ label, value, hint }));
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function formatDependencies(value: unknown): string {
