@@ -4,7 +4,15 @@ import net from "node:net";
 import { spawn } from "node:child_process";
 import { nodeEntrypoint } from "./entrypoint.js";
 import { ensureRuntimePaths, runtimePaths } from "./paths.js";
-import { PROTOCOL_VERSION, RemoteError, type ProtocolEvent, type ProtocolResponse } from "./protocol.js";
+import {
+  PROTOCOL_VERSION,
+  RemoteError,
+  type BackendOperation,
+  type BackendPayload,
+  type BackendResult,
+  type ProtocolEvent,
+  type ProtocolResponse,
+} from "./protocol.js";
 import type { RunEvent, SupervisorStatus } from "./types.js";
 
 export type RequestOptions = {
@@ -15,11 +23,11 @@ export type RequestOptions = {
 let compatibilityCheck: Promise<void> | null = null;
 let recoveryCheck: Promise<void> | null = null;
 
-export async function requestBackend<T = unknown>(
-  type: string,
-  payload: unknown = {},
+export async function requestBackend<K extends BackendOperation>(
+  type: K,
+  payload: BackendPayload<K>,
   options: RequestOptions = {},
-): Promise<T> {
+): Promise<BackendResult<K>> {
   const autoStart = options.autoStart !== false;
   await ensureCompatibleBackend(autoStart, options.timeoutMs ?? 5_000);
   let socket = await connectBackend();
@@ -28,7 +36,7 @@ export async function requestBackend<T = unknown>(
     socket = await connectBackend();
   }
   if (!socket) throw new RemoteError("NOT_RUNNING", "pl-runner backend is not running");
-  const result = await sendRequest<T>(socket, type, payload, options.timeoutMs ?? 30_000);
+  const result = await sendRequest<BackendResult<K>>(socket, type, payload, options.timeoutMs ?? 30_000);
   if (type === "backend.shutdown") compatibilityCheck = null;
   return result;
 }
@@ -70,7 +78,7 @@ async function waitForBackend(timeoutMs = 5_000): Promise<net.Socket> {
 export async function waitForStart(instanceId: string, runId: string, timeoutMs = 30 * 60_000): Promise<SupervisorStatus> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const status = await requestBackend<SupervisorStatus>("status.get");
+    const status = await requestBackend("status.get", {});
     const instance = status.instances.find((candidate) => candidate.id === instanceId);
     if (!instance?.run || instance.run.runId !== runId) {
       throw new RemoteError("WORKER_RECOVERY_FAILED", "the requested run is no longer current");
@@ -84,12 +92,12 @@ export async function waitForStart(instanceId: string, runId: string, timeoutMs 
 export async function waitForTerminal(instanceId: string, runId: string, timeoutMs = 20_000): Promise<SupervisorStatus> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const status = await requestBackend<SupervisorStatus>("status.get");
+    const status = await requestBackend("status.get", {});
     const instance = status.instances.find((candidate) => candidate.id === instanceId);
     if (!instance?.run || instance.run.runId !== runId || instance.run.state === "stopped" || instance.run.state === "failed") return status;
     await delay(100);
   }
-  return requestBackend<SupervisorStatus>("status.get");
+  return requestBackend("status.get", {});
 }
 
 export async function subscribeLogs(

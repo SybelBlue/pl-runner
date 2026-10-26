@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { nextAvailablePort } from "./instances.js";
 import { loadSavedConfig, stateFilePath } from "./state.js";
 import { ensureRuntimePaths, runtimePaths } from "./paths.js";
 import type {
@@ -133,14 +134,6 @@ export async function deleteInstanceRuns(
   await Promise.all([...runIds]
     .filter(isSafeRunId)
     .map((runId) => fs.rm(path.join(runsDir, runId), { recursive: true, force: true })));
-}
-
-function nextAvailablePort(instances: Array<Pick<InstanceRecord, "config">>, start = 3000): number {
-  const used = new Set(instances.map((instance) => instance.config.port));
-  for (let port = Math.max(1, start); port <= 65_535; port += 1) {
-    if (!used.has(port)) return port;
-  }
-  throw new Error("no available TCP ports remain");
 }
 
 function dockerHostPort(value: unknown): number | null {

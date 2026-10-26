@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, render, useApp, useBoxMetrics, useInput, useStdout } from "ink";
 import { requestBackend } from "./client.js";
-import { isActive } from "./backend.js";
+import { isActive, nextAvailablePort, nextProfileName } from "./instances.js";
 import { mouseEventIsInside, useMouseWheel } from "./mouse.js";
 import { completeDirectoryPath, displayHomeRelativePath, resolvePath, type DirectorySuggestion } from "./path.js";
-import { RemoteError } from "./protocol.js";
+import { RemoteError, type BackendPayload, type HostInspection } from "./protocol.js";
 import type { DOMElement } from "ink";
 import type { InstanceStatus, LaunchConfig, LifecycleState, RunEvent, SupervisorStatus } from "./types.js";
 
@@ -81,7 +81,7 @@ function App(): React.ReactElement {
   const [draft, setDraft] = useState<ProfileDraft>({ id: null, name: "server-1", config: defaultGitConfig() });
   const [fieldIndex, setFieldIndex] = useState(0);
   const [editing, setEditing] = useState<EditingField | null>(null);
-  const [hostInfo, setHostInfo] = useState<Record<string, unknown> | null>(null);
+  const [hostInfo, setHostInfo] = useState<HostInspection | null>(null);
   const [directorySuggestions, setDirectorySuggestions] = useState<DirectorySuggestion[]>([]);
   const [directorySuggestionsLoading, setDirectorySuggestionsLoading] = useState(false);
   const [directorySuggestionsError, setDirectorySuggestionsError] = useState<string | null>(null);
@@ -89,10 +89,10 @@ function App(): React.ReactElement {
   const refresh = async (preferredId = selectedId) => {
     const generation = ++refreshGeneration.current;
     try {
-      const next = await requestBackend<SupervisorStatus>("status.get");
+      const next = await requestBackend("status.get", {});
       const selected = next.instances.find((instance) => instance.id === preferredId) ?? next.instances[0] ?? null;
       const nextEvents = selected?.run
-        ? await requestBackend<RunEvent[]>("logs.tail", {
+        ? await requestBackend("logs.tail", {
             instanceId: selected.id,
             runId: selected.run.runId,
             limit: 1_000,
@@ -122,7 +122,7 @@ function App(): React.ReactElement {
     if (view !== "config") return;
     const timer = setTimeout(() => {
       const path = draft.config.mode === "git" && draft.config.path ? resolvePath(draft.config.path) : undefined;
-      void requestBackend<Record<string, unknown>>("host.inspect", {
+      void requestBackend("host.inspect", {
         mode: draft.config.mode,
         ...(path ? { path } : {}),
       }).then(setHostInfo).catch(() => setHostInfo(null));
@@ -185,7 +185,9 @@ function App(): React.ReactElement {
     }
   };
 
-  const start = (overrides: Record<string, unknown> = {}) => perform(async () => {
+  const start = (
+    overrides: Pick<BackendPayload<"instance.start">, "allowPullFailure" | "startDockerDaemon"> = {},
+  ) => perform(async () => {
     if (!selected) {
       beginNewProfile();
       return;
@@ -194,7 +196,12 @@ function App(): React.ReactElement {
   });
 
   const beginNewProfile = () => {
-    const port = nextAvailablePort(instances);
+    let port = 3000;
+    try {
+      port = nextAvailablePort(instances);
+    } catch {
+      // Preserve the existing fallback; the backend will report the conflict.
+    }
     setDraft({ id: null, name: nextProfileName(instances), config: defaultGitConfig(port) });
     setFieldIndex(0);
     setEditing(null);
@@ -298,8 +305,8 @@ function App(): React.ReactElement {
               config: normalizeClientConfig(draft.config),
             };
             const saved = draft.id
-              ? await requestBackend<InstanceStatus>("instance.update", { instanceId: draft.id, ...payload })
-              : await requestBackend<InstanceStatus>("instance.create", payload);
+              ? await requestBackend("instance.update", { instanceId: draft.id, ...payload })
+              : await requestBackend("instance.create", payload);
             setSelectedId(saved.id);
             setView("dashboard");
             await refresh(saved.id);
@@ -693,18 +700,4 @@ function normalizeClientConfig(config: LaunchConfig): LaunchConfig {
     tmp_dir: resolvePath(config.tmp_dir),
     quiet: false,
   };
-}
-
-function nextAvailablePort(instances: InstanceStatus[], start = 3000): number {
-  const used = new Set(instances.map((instance) => instance.config.port));
-  for (let port = start; port <= 65_535; port += 1) if (!used.has(port)) return port;
-  return 3000;
-}
-
-function nextProfileName(instances: InstanceStatus[]): string {
-  const names = new Set(instances.map((instance) => instance.name.toLocaleLowerCase()));
-  for (let index = 1; ; index += 1) {
-    const candidate = `server-${index}`;
-    if (!names.has(candidate)) return candidate;
-  }
 }

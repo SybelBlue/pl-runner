@@ -49,6 +49,7 @@ exit 0
   try {
     firstBackend = runBackend(env);
     await waitForSocket(socketPath);
+    await assert.rejects(request(socketPath, "unknown.operation"), /NOT_FOUND/);
     alpha = await request<InstanceStatus>(socketPath, "instance.create", {
       name: "alpha",
       config: dockerConfig(course, jobs, firstPort),

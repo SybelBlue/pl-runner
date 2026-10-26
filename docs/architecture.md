@@ -5,14 +5,17 @@ Status: current multi-instance architecture.
 ## Boundaries
 
 ```text
-Ink TUI ─┐
-CLI ─────┴─ versioned JSON over a Unix socket ─→ supervisor ─┬→ durable worker ─→ process group
-                                                    │        ├→ durable worker ─→ process group
-                                               profiles/state└→ …             event logs/state
+Ink TUI ─┐                  socket transport ─→ supervisor service ─┬→ durable workers → process groups
+CLI ─────┴→ typed client ─→ (protocol/framing)      │               ├→ host inspection
+                                                    │               └→ port/process control
+                                              profiles/run state
 ```
 
 - The TUI and CLI render state and submit intent. They do not inspect Git, Docker, dependencies, the network, or managed processes.
-- One per-user supervisor validates configuration, serializes lifecycle mutations, performs host discovery, and serves concurrent observers.
+- The typed client maps every operation to its payload and result while retaining backend startup and legacy-protocol handoff.
+- The socket backend owns framing, subscriptions, protocol errors, and shutdown. It delegates validated operations to one application-level supervisor service.
+- The supervisor service owns profile and run behavior. One state queue serializes both worker refreshes and mutations so concurrent requests cannot overwrite newer state.
+- Persistence, worker control, and host operations are injected service gateways with production implementations backed by the state store and local processes.
 - One detached worker owns each run. Workers perform preparation, own child process groups, capture output, watch upstream Git state, and remain alive if the supervisor exits.
 - Named profiles have unique host ports and independent current runs and histories. Any number can be active concurrently. A run contains an immutable configuration snapshot.
 
@@ -22,7 +25,7 @@ Supervisor protocol v2 uses newline-delimited JSON on a permission-restricted Un
 
 The supervisor supports handshake/capabilities, aggregate status, profile create/update/delete, host inspection, profile-scoped start/stop/restart, run-scoped log tail/subscription, approved Docker-daemon startup, and backend status/shutdown. The internal worker protocol remains v1 and supports status and stop so a v2 supervisor can recover workers launched before an upgrade.
 
-Protocol input is runtime-validated. A new client gracefully shuts down a legacy v1 supervisor, leaves its worker running, starts v2 on the same socket, migrates state, and reconnects to that worker.
+The envelope and operation-specific payloads are runtime-validated from the same operation map used for client-side TypeScript inference. A new client gracefully shuts down a legacy v1 supervisor, leaves its worker running, starts v2 on the same socket, migrates state, and reconnects to that worker.
 
 ## Lifecycle and recovery
 
