@@ -6,6 +6,7 @@ import { Box, renderToString } from "ink";
 import { render } from "ink-testing-library";
 import {
   branchSuggestions,
+  BackendView,
   ConfigView,
   DashboardMenu,
   LogLine,
@@ -147,6 +148,7 @@ test("shows only dashboard actions valid for the lifecycle state", () => {
   assert.match(view.lastFrame() ?? "", /s start/);
   assert.match(view.lastFrame() ?? "", /c configure/);
   assert.match(view.lastFrame() ?? "", /n new profile/);
+  assert.match(view.lastFrame() ?? "", /b backend/);
   assert.match(view.lastFrame() ?? "", /⌫\/Del delete/);
   assert.doesNotMatch(view.lastFrame() ?? "", /←\/→ switch/);
   assert.doesNotMatch(view.lastFrame() ?? "", /x stop|r restart|End follow/);
@@ -171,6 +173,30 @@ test("shows only dashboard actions valid for the lifecycle state", () => {
   );
   assert.match(view.lastFrame() ?? "", /n new profile/);
   assert.doesNotMatch(view.lastFrame() ?? "", /←\/→ switch/);
+});
+
+test("shows backend recovery controls in a dedicated view", () => {
+  const view = render(
+    <BackendView
+      connected={true}
+      status={{
+        backend: {
+          running: true,
+          pid: 123,
+          protocolVersion: 3,
+          packageVersion: "0.3.0",
+        },
+        instances: [],
+      }}
+      message="Backend restarted (pid 123)."
+    />,
+  );
+  const frame = view.lastFrame() ?? "";
+  assert.match(frame, /Backend controls/);
+  assert.match(frame, /pid 123 · v0\.3\.0 · protocol 3/);
+  assert.match(frame, /k kill · r restart · b\/Esc back · q quit/);
+  assert.match(frame, /preserves managed PrairieLearn instances/);
+  assert.match(frame, /Backend restarted/);
 });
 
 test("removes the user-home prefix from titlebar configuration summaries", () => {

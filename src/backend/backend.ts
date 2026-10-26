@@ -154,8 +154,15 @@ export async function runBackend(
     });
   });
   await fs.chmod(paths.backendSocket, 0o600);
-  await new Promise<void>((resolve) => server.once("close", resolve));
-  await fs.rm(paths.backendSocket, { force: true });
+  await fs.writeFile(paths.backendPid, `${process.pid}\n`, { mode: 0o600 });
+  try {
+    await new Promise<void>((resolve) => server.once("close", resolve));
+  } finally {
+    await Promise.all([
+      fs.rm(paths.backendSocket, { force: true }),
+      removeOwnedPidFile(paths.backendPid),
+    ]);
+  }
 }
 
 type DispatchOperation = Exclude<BackendOperation, "logs.subscribe">;
@@ -239,6 +246,15 @@ async function assertSocketAvailable(socketPath: string): Promise<void> {
     if (!stat.isSocket() || stat.uid !== uid)
       throw new Error(`refusing to remove unsafe socket: ${socketPath}`);
     await fs.rm(socketPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+async function removeOwnedPidFile(pidFile: string): Promise<void> {
+  try {
+    const recordedPid = Number((await fs.readFile(pidFile, "utf8")).trim());
+    if (recordedPid === process.pid) await fs.rm(pidFile, { force: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }

@@ -10,6 +10,7 @@ export type RuntimePaths = {
   stateFile: string;
   previousStateFile: string;
   backendSocket: string;
+  backendPid: string;
   backendLog: string;
 };
 
@@ -49,6 +50,7 @@ export function runtimePaths(
     stateFile: path.join(stateDir, "state-v3.json"),
     previousStateFile: path.join(stateDir, "state-v2.json"),
     backendSocket: path.join(runtimeDir, "backend-v1.sock"),
+    backendPid: path.join(runtimeDir, "backend.pid"),
     backendLog: path.join(stateDir, "backend.log"),
   };
 }

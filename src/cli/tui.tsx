@@ -8,7 +8,7 @@ import {
   useInput,
   useStdout,
 } from "ink";
-import { requestBackend } from "./client.js";
+import { killBackend, requestBackend, restartBackend } from "./client.js";
 import {
   isActive,
   nextAvailablePort,
@@ -35,7 +35,7 @@ import type {
   SupervisorStatus,
 } from "../core/types.js";
 
-type View = "dashboard" | "config";
+type View = "dashboard" | "config" | "backend";
 type LogColor = "cyan" | "green" | "yellow" | "red" | undefined;
 
 export type ConfigField = {
@@ -127,6 +127,9 @@ function App(): React.ReactElement {
   const [directorySuggestionsError, setDirectorySuggestionsError] = useState<
     string | null
   >(null);
+  const [backendBusy, setBackendBusy] = useState(false);
+  const [backendMessage, setBackendMessage] = useState<string | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   const refresh = async (preferredId = selectedId) => {
     const generation = ++refreshGeneration.current;
@@ -158,10 +161,11 @@ function App(): React.ReactElement {
   };
 
   useEffect(() => {
+    if (view === "backend") return;
     void refresh(selectedId);
     const interval = setInterval(() => void refresh(selectedId), 500);
     return () => clearInterval(interval);
-  }, [selectedId, errorCode]);
+  }, [selectedId, errorCode, view]);
 
   useEffect(() => {
     if (view !== "config") return;
@@ -304,7 +308,46 @@ function App(): React.ReactElement {
     setConfirmDelete(false);
   };
 
+  const controlBackend = async (restart: boolean) => {
+    setBackendBusy(true);
+    setBackendMessage(null);
+    setBackendError(null);
+    refreshGeneration.current += 1;
+    try {
+      if (restart) {
+        const next = await restartBackend(status?.backend.pid);
+        setStatus(next);
+        setConnected(true);
+        setBackendMessage(`Backend restarted (pid ${next.backend.pid}).`);
+      } else {
+        const result = await killBackend(status?.backend.pid);
+        setStatus(null);
+        setConnected(false);
+        setBackendMessage(
+          result.killedPids.length > 0
+            ? `Backend killed (pid ${result.killedPids.join(", ")}). Managed instances were preserved.`
+            : "Backend was already stopped.",
+        );
+      }
+    } catch (cause) {
+      setBackendError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBackendBusy(false);
+    }
+  };
+
   useInput((input, key) => {
+    if (view === "backend") {
+      if (input === "q") exit();
+      else if (backendBusy) return;
+      else if (input === "b" || key.escape) {
+        setBackendMessage(null);
+        setBackendError(null);
+        setView("dashboard");
+      } else if (input === "k") void controlBackend(false);
+      else if (input === "r") void controlBackend(true);
+      return;
+    }
     if (view === "config") {
       if (active && draft.id === selected?.id) {
         if (key.upArrow) setFieldIndex((index) => Math.max(0, index - 1));
@@ -473,7 +516,12 @@ function App(): React.ReactElement {
     }
 
     if (input === "q") exit();
-    else if (key.leftArrow) selectRelative(-1);
+    else if (input === "b") {
+      refreshGeneration.current += 1;
+      setBackendMessage(null);
+      setBackendError(null);
+      setView("backend");
+    } else if (key.leftArrow) selectRelative(-1);
     else if (key.rightArrow) selectRelative(1);
     else if (input === "n") beginNewProfile();
     else if ((key.delete || key.backspace) && selected) {
@@ -519,6 +567,17 @@ function App(): React.ReactElement {
   });
 
   const rows = process.stdout.rows ?? 24;
+  if (view === "backend") {
+    return (
+      <BackendView
+        connected={connected}
+        status={status}
+        busy={backendBusy}
+        message={backendMessage}
+        error={backendError}
+      />
+    );
+  }
   if (view === "config") {
     return (
       <ConfigView
@@ -631,8 +690,43 @@ export function DashboardMenu({
   if (profileCount > 1) items.push("←/→ switch");
   if (hasInstance) items.push("n new profile");
   if (hasInstance && !active) items.push("⌫/Del delete");
-  items.push("↑/↓/wheel scroll", "q quit");
+  items.push("↑/↓/wheel scroll", "b backend", "q quit");
   return <Text dimColor>Keys: {items.join(" · ")}</Text>;
+}
+
+export function BackendView({
+  connected,
+  status,
+  busy = false,
+  message,
+  error,
+}: {
+  connected: boolean;
+  status: SupervisorStatus | null;
+  busy?: boolean;
+  message?: string | null;
+  error?: string | null;
+}): React.ReactElement {
+  return (
+    <Box flexDirection="column">
+      <Text bold color="cyan">
+        Backend controls
+      </Text>
+      <Text>
+        State: {connected ? "connected" : "not connected"}
+        {status
+          ? ` · pid ${status.backend.pid} · v${status.backend.packageVersion} · protocol ${status.backend.protocolVersion}`
+          : ""}
+      </Text>
+      <Text dimColor>k kill · r restart · b/Esc back · q quit</Text>
+      <Text dimColor>
+        Killing the backend preserves managed PrairieLearn instances.
+      </Text>
+      {busy ? <Text color="yellow">Updating backend…</Text> : null}
+      {message ? <Text color="green">{message}</Text> : null}
+      {error ? <Text color="red">{error}</Text> : null}
+    </Box>
+  );
 }
 
 export function ProfileHeader({

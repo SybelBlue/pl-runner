@@ -57,7 +57,8 @@ exit 0
         "missing-legacy.yaml",
       ),
     };
-    const socketPath = runtimePaths(env).backendSocket;
+    const paths = runtimePaths(env);
+    const socketPath = paths.backendSocket;
     const [firstPort, secondPort] = await availablePorts(2);
 
     let firstBackend: Promise<void> | null = null;
@@ -68,6 +69,7 @@ exit 0
     try {
       firstBackend = runBackend(env);
       await waitForSocket(socketPath);
+      assert.equal(await waitForPidFile(paths.backendPid), process.pid);
       await assert.rejects(
         request(socketPath, "unknown.operation"),
         /NOT_FOUND/,
@@ -146,9 +148,11 @@ exit 0
       await request(socketPath, "backend.shutdown");
       await firstBackend;
       firstBackend = null;
+      await assert.rejects(fs.access(paths.backendPid));
 
       secondBackend = runBackend(env);
       await waitForSocket(socketPath);
+      assert.equal(await waitForPidFile(paths.backendPid), process.pid);
       const recovered = await request<SupervisorStatus>(
         socketPath,
         "status.get",
@@ -242,6 +246,7 @@ exit 0
       await request(socketPath, "backend.shutdown");
       await secondBackend;
       secondBackend = null;
+      await assert.rejects(fs.access(paths.backendPid));
     } finally {
       if (blockedServer?.listening) {
         await new Promise<void>((resolve) =>
@@ -287,6 +292,18 @@ function dockerConfig(course: string, jobs: string, port: number) {
     local_only: true,
     quiet: true,
   };
+}
+
+async function waitForPidFile(pidFile: string): Promise<number> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    try {
+      return Number((await fs.readFile(pidFile, "utf8")).trim());
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw new Error("backend PID file did not become ready");
 }
 
 async function request<T = unknown>(
