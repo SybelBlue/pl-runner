@@ -30,7 +30,7 @@
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p tsconfig.json",
-    "dev": "tsx src/index.ts",
+    "dev": "tsx src/entrypoints/index.ts",
     "prepare": "npm run build",
     "test": "npm run build && tsx --test test/*.test.ts test/*.test.tsx && knip",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
@@ -53,8 +53,8 @@
   },
   "knip": {
     "entry": [
-      "src/backend-entry.ts",
-      "src/worker-entry.ts"
+      "src/entrypoints/backend-entry.ts",
+      "src/entrypoints/worker-entry.ts"
     ]
   },
   "engines": {

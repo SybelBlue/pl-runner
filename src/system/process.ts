@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { CommandResult } from "./types.js";
+import type { CommandResult } from "../core/types.js";
 import { stripOsc11 } from "./format.js";
 import { withoutVirtualEnv } from "./path.js";
 

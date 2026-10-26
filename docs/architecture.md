@@ -19,6 +19,15 @@ CLI ─────┴→ typed client ─→ (protocol/framing)      │       
 - One detached worker owns each run. Workers perform preparation, own child process groups, capture output, watch upstream Git state, and remain alive if the supervisor exits.
 - Named profiles have unique host ports and independent current runs and histories. Any number can be active concurrently. A run contains an immutable configuration snapshot.
 
+## Source layout
+
+- `src/entrypoints`: executable entry modules for the CLI, backend, and worker processes.
+- `src/cli`: command parsing, the typed backend client, and the Ink terminal interface.
+- `src/backend`: socket handling, supervisor behavior, and persisted supervisor state.
+- `src/worker`: durable worker behavior, run preparation, Docker launches, and event logs.
+- `src/core`: shared domain types, instance rules, and protocol contracts.
+- `src/system`: operating-system adapters and cross-cutting filesystem, process, path, and formatting utilities.
+
 ## Protocol
 
 Supervisor protocol v2 uses newline-delimited JSON on a permission-restricted Unix-domain socket. Every request contains `protocol`, `id`, `type`, and `payload`; every response repeats the ID and contains either `result` or a structured `error`. Long-lived log connections bind to an instance and immutable run ID before receiving sequenced `log` events.

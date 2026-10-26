@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, render, useApp, useBoxMetrics, useInput, useStdout } from "ink";
 import { requestBackend } from "./client.js";
-import { isActive, nextAvailablePort, nextProfileName } from "./instances.js";
+import { isActive, nextAvailablePort, nextProfileName } from "../core/instances.js";
 import { mouseEventIsInside, useMouseWheel } from "./mouse.js";
-import { completeDirectoryPath, displayHomeRelativePath, resolvePath, type DirectorySuggestion } from "./path.js";
-import { RemoteError, type BackendPayload, type HostInspection } from "./protocol.js";
+import { completeDirectoryPath, displayHomeRelativePath, resolvePath, type DirectorySuggestion } from "../system/path.js";
+import { RemoteError, type BackendPayload, type HostInspection } from "../core/protocol.js";
 import type { DOMElement } from "ink";
-import type { InstanceStatus, LaunchConfig, LifecycleState, RunEvent, SupervisorStatus } from "./types.js";
+import type { InstanceStatus, LaunchConfig, LifecycleState, RunEvent, SupervisorStatus } from "../core/types.js";
 
 type View = "dashboard" | "config";
 type LogColor = "cyan" | "green" | "yellow" | "red" | undefined;

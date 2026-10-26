@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { completeDirectoryPath, displayHomeRelativePath } from "../src/path.ts";
+import { completeDirectoryPath, displayHomeRelativePath } from "../src/system/path.ts";
 
 test("displays paths below the home directory without the home prefix", () => {
   assert.equal(displayHomeRelativePath("/Users/example/Documents/PrairieLearn", "/Users/example"), "Documents/PrairieLearn");

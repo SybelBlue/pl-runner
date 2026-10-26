@@ -1,4 +1,4 @@
-import { runWorker } from "./worker.js";
+import { runWorker } from "../worker/worker.js";
 
 const requestPath = process.argv[2];
 if (!requestPath) {

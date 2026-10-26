@@ -1,6 +1,6 @@
-import { commitAgeSeconds, git, revision, upstreamRef } from "./git.js";
-import { formatRelativeTime } from "./format.js";
-import type { Logger } from "./types.js";
+import { commitAgeSeconds, git, revision, upstreamRef } from "../system/git.js";
+import { formatRelativeTime } from "../system/format.js";
+import type { Logger } from "../core/types.js";
 
 export type WatchHandle = {
   stop: () => void;

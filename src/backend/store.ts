@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { nextAvailablePort } from "./instances.js";
+import { nextAvailablePort } from "../core/instances.js";
 import { loadSavedConfig, stateFilePath } from "./state.js";
-import { ensureRuntimePaths, runtimePaths } from "./paths.js";
+import { ensureRuntimePaths, runtimePaths } from "../system/paths.js";
 import type {
   GitConfig,
   InstanceRecord,
@@ -11,7 +11,7 @@ import type {
   RunRecord,
   SupervisorState,
   WorkerState,
-} from "./types.js";
+} from "../core/types.js";
 
 const EMPTY_STATE: SupervisorState = {
   schemaVersion: 3,

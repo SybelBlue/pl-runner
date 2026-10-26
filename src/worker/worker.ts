@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import net from "node:net";
-import { checkPreflightDependencies, missingDependencies } from "./deps.js";
+import { checkPreflightDependencies, missingDependencies } from "../system/deps.js";
 import { launchDocker } from "./docker.js";
 import { EventLog, eventLogger } from "./event-log.js";
-import { WORKER_PROTOCOL_VERSION, workerRequestSchema } from "./protocol.js";
+import { WORKER_PROTOCOL_VERSION, workerRequestSchema } from "../core/protocol.js";
 import { applyOfflineDefaults, launchRun, normalizeRunConfig, type LaunchControl } from "./run.js";
-import { eventLogFile, saveWorkerState } from "./store.js";
-import type { LaunchConfig, LifecycleState, WorkerState } from "./types.js";
+import { eventLogFile, saveWorkerState } from "../backend/store.js";
+import type { LaunchConfig, LifecycleState, WorkerState } from "../core/types.js";
 
 export type WorkerRequest = {
   instanceId: string;

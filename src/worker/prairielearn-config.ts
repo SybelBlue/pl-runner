@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runCommand } from "./process.js";
-import { expandHome } from "./path.js";
-import type { Logger } from "./types.js";
+import { runCommand } from "../system/process.js";
+import { expandHome } from "../system/path.js";
+import type { Logger } from "../core/types.js";
 
 export type EffectiveConfig = {
   path: string;

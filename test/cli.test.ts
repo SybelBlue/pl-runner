@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { main, parseArgs } from "../src/cli.ts";
+import { main, parseArgs } from "../src/cli/cli.ts";
 
 test("parses run options, selectors, ports, and quiet aliases", () => {
   const parsed = parseArgs(["--quiet", "run", "--instance", "alpha", "--branch", "main", "--port", "3001", "--isolated-database", "-f", "-l", "-p", "/pl", "-w", "--detach", "--json", "--allow-pull-failure"]);

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import net from "node:net";
-import { ensureRuntimePaths } from "./paths.js";
+import { ensureRuntimePaths } from "../system/paths.js";
 import {
   PROTOCOL_VERSION,
   failure,
@@ -12,9 +12,9 @@ import {
   type BackendPayload,
   type BackendResult,
   type ProtocolRequest,
-} from "./protocol.js";
+} from "../core/protocol.js";
 import { Supervisor, SupervisorError } from "./supervisor.js";
-import { packageVersion } from "./version.js";
+import { packageVersion } from "../system/version.js";
 
 export async function runBackend(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   if (process.platform === "win32") throw new Error("pl-runner backend supports macOS and Linux only");

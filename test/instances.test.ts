@@ -7,8 +7,8 @@ import {
   isStartEligible,
   nextAvailablePort,
   nextProfileName,
-} from "../src/instances.ts";
-import type { InstanceStatus, LifecycleState } from "../src/types.ts";
+} from "../src/core/instances.ts";
+import type { InstanceStatus, LifecycleState } from "../src/core/types.ts";
 
 const config = {
   mode: "docker" as const,

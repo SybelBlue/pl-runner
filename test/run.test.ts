@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { applyOfflineDefaults, launchRun } from "../src/run.ts";
-import type { GitConfig, Logger } from "../src/types.ts";
+import { applyOfflineDefaults, launchRun } from "../src/worker/run.ts";
+import type { GitConfig, Logger } from "../src/core/types.ts";
 
 const logger: Logger = {
   error: () => undefined,

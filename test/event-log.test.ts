@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { EventLog, omitDependencyPackageChanges, readEvents, sanitizeTerminalText } from "../src/event-log.ts";
-import type { RunEvent } from "../src/types.ts";
+import { EventLog, omitDependencyPackageChanges, readEvents, sanitizeTerminalText } from "../src/worker/event-log.ts";
+import type { RunEvent } from "../src/core/types.ts";
 
 test("sanitizes terminal control sequences", () => {
   assert.equal(sanitizeTerminalText("red\x1b[31m!\x1b[0m\x1b]11;#fff\x07"), "red!");

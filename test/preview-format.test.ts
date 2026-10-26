@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatRelativeTime, stripOsc11 } from "../src/format.ts";
-import { branchSlug } from "../src/worktree.ts";
+import { formatRelativeTime, stripOsc11 } from "../src/system/format.ts";
+import { branchSlug } from "../src/worker/worktree.ts";
 
 test("strips OSC 11 sequences", () => {
   assert.equal(stripOsc11("a\x1b]11;rgb:0000/0000/0000\x07b"), "ab");

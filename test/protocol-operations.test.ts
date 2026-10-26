@@ -4,7 +4,7 @@ import {
   isBackendOperation,
   parseBackendPayload,
   type BackendOperationMap,
-} from "../src/protocol.ts";
+} from "../src/core/protocol.ts";
 
 const config = {
   mode: "docker" as const,

@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { formatRelativeTime } from "./format.js";
-import { git, repoRoot } from "./git.js";
-import type { Logger } from "./types.js";
+import { formatRelativeTime } from "../system/format.js";
+import { git, repoRoot } from "../system/git.js";
+import type { Logger } from "../core/types.js";
 
 export type WorktreeInfo = {
   path: string;

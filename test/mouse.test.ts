@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createMouseWheelParser, mouseEventIsInside } from "../src/mouse.ts";
+import { createMouseWheelParser, mouseEventIsInside } from "../src/cli/mouse.ts";
 
 test("parses SGR mouse wheel reports across input chunks", () => {
   const parser = createMouseWheelParser();

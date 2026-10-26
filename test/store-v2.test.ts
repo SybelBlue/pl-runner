@@ -3,9 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runtimePaths } from "../src/paths.ts";
-import { loadSupervisorState, pruneRunHistory } from "../src/store.ts";
-import type { SupervisorState } from "../src/types.ts";
+import { runtimePaths } from "../src/system/paths.ts";
+import { loadSupervisorState, pruneRunHistory } from "../src/backend/store.ts";
+import type { SupervisorState } from "../src/core/types.ts";
 
 test("imports legacy YAML once and leaves it untouched", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pl-store-test-"));

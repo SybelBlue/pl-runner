@@ -6,8 +6,8 @@ import test from "node:test";
 import {
   ensureIsolatedDatabase,
   writeEffectivePrairieLearnConfig,
-} from "../src/prairielearn-config.ts";
-import type { Logger } from "../src/types.ts";
+} from "../src/worker/prairielearn-config.ts";
+import type { Logger } from "../src/core/types.ts";
 
 const logger: Logger = {
   error: () => undefined,

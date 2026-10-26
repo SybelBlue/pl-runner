@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { runCommand } from "./process.js";
-import type { Logger } from "./types.js";
+import type { Logger } from "../core/types.js";
 
 export async function validateProjectPath(projectPath: string, logger: Logger): Promise<boolean> {
   try {

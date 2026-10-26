@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { launchConfigSchema, requestSchema } from "../src/protocol.ts";
+import { launchConfigSchema, requestSchema } from "../src/core/protocol.ts";
 
 test("validates versioned request envelopes", () => {
   assert.deepEqual(requestSchema.parse({ protocol: 2, id: "a", type: "status.get", payload: {} }), {

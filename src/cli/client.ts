@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
 import { spawn } from "node:child_process";
-import { nodeEntrypoint } from "./entrypoint.js";
-import { ensureRuntimePaths, runtimePaths } from "./paths.js";
+import { nodeEntrypoint } from "../system/entrypoint.js";
+import { ensureRuntimePaths, runtimePaths } from "../system/paths.js";
 import {
   PROTOCOL_VERSION,
   RemoteError,
@@ -12,8 +12,8 @@ import {
   type BackendResult,
   type ProtocolEvent,
   type ProtocolResponse,
-} from "./protocol.js";
-import type { RunEvent, SupervisorStatus } from "./types.js";
+} from "../core/protocol.js";
+import type { RunEvent, SupervisorStatus } from "../core/types.js";
 
 export type RequestOptions = {
   autoStart?: boolean;

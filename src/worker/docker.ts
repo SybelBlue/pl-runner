@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { runCommand, runInteractiveProcess } from "./process.js";
-import { resolvePath, systemTmpDir, withoutVirtualEnv } from "./path.js";
-import type { DockerImageTag, DockerOptions, Logger } from "./types.js";
+import { runCommand, runInteractiveProcess } from "../system/process.js";
+import { resolvePath, systemTmpDir, withoutVirtualEnv } from "../system/path.js";
+import type { DockerImageTag, DockerOptions, Logger } from "../core/types.js";
 import type { LaunchControl } from "./run.js";
 
 const DOCKER_IMAGE_REPOSITORY = "prairielearn/prairielearn";

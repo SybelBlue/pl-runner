@@ -2,15 +2,15 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
-import { checkPreflightDependencies } from "./deps.js";
-import { dockerImageInfo, startDockerDaemon } from "./docker.js";
-import { nodeEntrypoint } from "./entrypoint.js";
-import { omitDependencyPackageChanges, readEvents } from "./event-log.js";
-import { currentBranch, localBranches, remoteOnlyBranches, validateProjectPath } from "./git.js";
-import { hasInternet } from "./internet.js";
-import { instanceNameKey, instanceStatus, isActive } from "./instances.js";
-import { createLogger } from "./logger.js";
-import { ensurePrivateDirectory, runDirectory, workerSocketPath } from "./paths.js";
+import { checkPreflightDependencies } from "../system/deps.js";
+import { dockerImageInfo, startDockerDaemon } from "../worker/docker.js";
+import { nodeEntrypoint } from "../system/entrypoint.js";
+import { omitDependencyPackageChanges, readEvents } from "../worker/event-log.js";
+import { currentBranch, localBranches, remoteOnlyBranches, validateProjectPath } from "../system/git.js";
+import { hasInternet } from "../system/internet.js";
+import { instanceNameKey, instanceStatus, isActive } from "../core/instances.js";
+import { createLogger } from "../system/logger.js";
+import { ensurePrivateDirectory, runDirectory, workerSocketPath } from "../system/paths.js";
 import {
   PROTOCOL_VERSION,
   WORKER_PROTOCOL_VERSION,
@@ -20,7 +20,7 @@ import {
   type BackendResult,
   type HostInspection,
   type ProtocolErrorCode,
-} from "./protocol.js";
+} from "../core/protocol.js";
 import {
   deleteInstanceRuns,
   eventLogFile,
@@ -37,9 +37,9 @@ import type {
   RunRecord,
   SupervisorState,
   WorkerState,
-} from "./types.js";
-import { packageVersion } from "./version.js";
-import type { WorkerRequest } from "./worker.js";
+} from "../core/types.js";
+import { packageVersion } from "../system/version.js";
+import type { WorkerRequest } from "../worker/worker.js";
 
 export type LogTarget = { instanceId: string; runId: string; runDir: string };
 

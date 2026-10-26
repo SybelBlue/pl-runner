@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Supervisor, SupervisorError, type SupervisorDependencyOverrides } from "../src/supervisor.ts";
+import { Supervisor, SupervisorError, type SupervisorDependencyOverrides } from "../src/backend/supervisor.ts";
 import type {
   InstanceRecord,
   LaunchConfig,
@@ -8,7 +8,7 @@ import type {
   RunRecord,
   SupervisorState,
   WorkerState,
-} from "../src/types.ts";
+} from "../src/core/types.ts";
 
 const dockerConfig = (port: number): LaunchConfig => ({
   mode: "docker",

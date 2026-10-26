@@ -18,8 +18,8 @@ import {
   relativeInstanceId,
   titlebarSequence,
   visibleLogEvents,
-} from "../src/tui.tsx";
-import type { LaunchConfig, RunEvent, SupervisorStatus } from "../src/types.ts";
+} from "../src/cli/tui.tsx";
+import type { LaunchConfig, RunEvent, SupervisorStatus } from "../src/core/types.ts";
 
 const gitConfig: Extract<LaunchConfig, { mode: "git" }> = {
   mode: "git",

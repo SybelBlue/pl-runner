@@ -1,11 +1,11 @@
-import { hasInternet } from "./internet.js";
+import { hasInternet } from "../system/internet.js";
 import { createBranchWorktree } from "./worktree.js";
-import { git, validateProjectPath } from "./git.js";
-import { resolvePath, withoutVirtualEnv } from "./path.js";
-import { runInteractiveProcess } from "./process.js";
+import { git, validateProjectPath } from "../system/git.js";
+import { resolvePath, withoutVirtualEnv } from "../system/path.js";
+import { runInteractiveProcess } from "../system/process.js";
 import { ensureIsolatedDatabase, writeEffectivePrairieLearnConfig } from "./prairielearn-config.js";
 import { startUpstreamWatch } from "./watch.js";
-import type { CommandResult, GitConfig, Logger, RunOptions } from "./types.js";
+import type { CommandResult, GitConfig, Logger, RunOptions } from "../core/types.js";
 
 export type LaunchControl = {
   allowPullFailure?: boolean;

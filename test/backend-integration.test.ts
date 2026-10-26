@@ -5,10 +5,10 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runBackend } from "../src/backend.ts";
-import { runtimePaths } from "../src/paths.ts";
-import type { ProtocolResponse } from "../src/protocol.ts";
-import type { InstanceStatus, RunEvent, RunRecord, SupervisorStatus } from "../src/types.ts";
+import { runBackend } from "../src/backend/backend.ts";
+import { runtimePaths } from "../src/system/paths.ts";
+import type { ProtocolResponse } from "../src/core/protocol.ts";
+import type { InstanceStatus, RunEvent, RunRecord, SupervisorStatus } from "../src/core/types.ts";
 
 test("supervisor manages and recovers multiple workers independently", { timeout: 40_000 }, async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pl-backend-test-"));

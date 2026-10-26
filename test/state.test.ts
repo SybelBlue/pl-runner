@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseConfigYaml, stateFilePath, stringifyConfigYaml } from "../src/state.ts";
+import { parseConfigYaml, stateFilePath, stringifyConfigYaml } from "../src/backend/state.ts";
 
 test("uses state file path precedence", () => {
   assert.equal(

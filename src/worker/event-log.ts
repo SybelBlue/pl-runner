@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { LogSource, Logger, RunEvent } from "./types.js";
+import type { LogSource, Logger, RunEvent } from "../core/types.js";
 
 const MAX_RUN_LOG_BYTES = 10 * 1024 * 1024;
 const MEMORY_TAIL_ENTRIES = 1_000;

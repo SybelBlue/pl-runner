@@ -6,16 +6,16 @@ import {
   waitForStart,
   waitForTerminal,
 } from "./client.js";
-import { DEFAULT_DOCKER_IMAGE_TAG, normalizeDockerImageTag } from "./docker.js";
+import { DEFAULT_DOCKER_IMAGE_TAG, normalizeDockerImageTag } from "../worker/docker.js";
 import {
   findInstanceByName,
   isActive,
   isRestartEligible,
   isStartEligible,
   nextAvailablePort,
-} from "./instances.js";
-import { resolvePath, systemTmpDir } from "./path.js";
-import { RemoteError } from "./protocol.js";
+} from "../core/instances.js";
+import { resolvePath, systemTmpDir } from "../system/path.js";
+import { RemoteError } from "../core/protocol.js";
 import type {
   DockerConfig,
   GitLaunchConfig,
@@ -23,8 +23,8 @@ import type {
   RunEvent,
   RunOptions,
   SupervisorStatus,
-} from "./types.js";
-import { packageVersion } from "./version.js";
+} from "../core/types.js";
+import { packageVersion } from "../system/version.js";
 
 type Command = "run" | "docker" | "start" | "status" | "stop" | "restart" | "logs" | "backend" | "help" | "version" | null;
 

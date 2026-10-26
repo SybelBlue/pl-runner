@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { PreflightDependencies } from "./deps.js";
-import type { DockerImageInfo } from "./docker.js";
+import type { PreflightDependencies } from "../system/deps.js";
+import type { DockerImageInfo } from "../worker/docker.js";
 import type {
   InstanceStatus,
   LaunchConfig,

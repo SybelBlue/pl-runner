@@ -6,7 +6,7 @@ import {
   formerPrairieLearnDanglingImageIds,
   normalizeDockerOptions,
   shellCommand,
-} from "../src/docker.ts";
+} from "../src/worker/docker.ts";
 
 test("assembles docker run arguments", () => {
   assert.deepEqual(dockerRunArgs({

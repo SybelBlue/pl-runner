@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { normalizeDockerImageTag } from "./docker.js";
-import { expandHome } from "./path.js";
-import type { DockerConfig, GitConfig, SavedConfig } from "./types.js";
+import { normalizeDockerImageTag } from "../worker/docker.js";
+import { expandHome } from "../system/path.js";
+import type { DockerConfig, GitConfig, SavedConfig } from "../core/types.js";
 
 export function stateFilePath(env: NodeJS.ProcessEnv = process.env): string {
   if (env.PRAIRIELEARN_PREVIOUS_CONFIG_FILE) return expandHome(env.PRAIRIELEARN_PREVIOUS_CONFIG_FILE);

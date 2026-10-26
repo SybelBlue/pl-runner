@@ -1,4 +1,4 @@
-import type { Logger } from "./types.js";
+import type { Logger } from "../core/types.js";
 
 const colors = {
   red: "\x1b[31m",
