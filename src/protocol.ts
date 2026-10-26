@@ -46,7 +46,7 @@ export type ProtocolErrorCode =
   | "NOT_FOUND"
   | "INTERNAL_ERROR";
 
-export type ProtocolError = {
+type ProtocolError = {
   code: ProtocolErrorCode;
   message: string;
   details?: unknown;

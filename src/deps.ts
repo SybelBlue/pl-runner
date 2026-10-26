@@ -24,7 +24,3 @@ export async function checkPreflightDependencies(): Promise<PreflightDependencie
 export function missingDependencies(deps: PreflightDependencies, commands: CommandDependency[]): CommandDependency[] {
   return commands.filter((command) => !deps[command]);
 }
-
-export function formatDependencyStatus(deps: PreflightDependencies): string {
-  return dependencies.map((dependency) => `${dependency}: ${deps[dependency] ? "found" : "missing"}`).join(", ");
-}

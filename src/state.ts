@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { normalizeDockerImageTag } from "./docker.js";
 import { expandHome } from "./path.js";
-import type { DockerConfig, GitConfig, Logger, SavedConfig } from "./types.js";
+import type { DockerConfig, GitConfig, SavedConfig } from "./types.js";
 
 export function stateFilePath(env: NodeJS.ProcessEnv = process.env): string {
   if (env.PRAIRIELEARN_PREVIOUS_CONFIG_FILE) return expandHome(env.PRAIRIELEARN_PREVIOUS_CONFIG_FILE);
@@ -18,15 +18,6 @@ export async function loadSavedConfig(file = stateFilePath()): Promise<SavedConf
     return parseConfigYaml(contents);
   } catch {
     return null;
-  }
-}
-
-export async function saveConfig(config: SavedConfig, logger: Logger, file = stateFilePath()): Promise<void> {
-  try {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, stringifyConfigYaml(config), "utf8");
-  } catch (error) {
-    logger.warn(`could not save previous config: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

@@ -32,7 +32,7 @@
     "build": "npm run clean && tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
     "prepare": "npm run build",
-    "test": "npm run build && tsx --test test/*.test.ts test/*.test.tsx",
+    "test": "npm run build && tsx --test test/*.test.ts test/*.test.tsx && knip",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
     "typecheck:src": "tsc -p tsconfig.json --noEmit",
     "typecheck:test": "tsc -p test/tsconfig.json",
@@ -47,8 +47,15 @@
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.2",
     "ink-testing-library": "4.0.0",
+    "knip": "6.43.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
+  },
+  "knip": {
+    "entry": [
+      "src/backend-entry.ts",
+      "src/worker-entry.ts"
+    ]
   },
   "engines": {
     "node": ">=22"

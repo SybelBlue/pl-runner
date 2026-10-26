@@ -5,7 +5,7 @@ import { launchDocker } from "./docker.js";
 import { EventLog, eventLogger } from "./event-log.js";
 import { failure, requestSchema, success } from "./protocol.js";
 import { applyOfflineDefaults, launchRun, normalizeRunConfig, type LaunchControl } from "./run.js";
-import { eventLogFile, saveWorkerState, workerRequestFile } from "./store.js";
+import { eventLogFile, saveWorkerState } from "./store.js";
 import type { LaunchConfig, LifecycleState, WorkerState } from "./types.js";
 
 export type WorkerRequest = {
@@ -203,8 +203,4 @@ async function createWorkerServer(
 async function closeServer(server: net.Server, socketPath: string): Promise<void> {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await fs.rm(socketPath, { force: true });
-}
-
-export async function readWorkerRequest(runDir: string): Promise<WorkerRequest> {
-  return JSON.parse(await fs.readFile(workerRequestFile(runDir), "utf8")) as WorkerRequest;
 }

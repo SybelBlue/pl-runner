@@ -25,7 +25,7 @@ pl backend stop            # leaves a managed instance running
 - `s`: start the saved configuration
 - `x`: stop the managed instance
 - `r`: restart the running instance
-- `c`: configure Git or Docker mode
+- `c`: configure Git or Docker mode, or view the active run's configuration read-only
 - arrow keys/PageUp/PageDown or the mouse wheel over the log pane: scroll logs
 - `End`: resume auto-follow
 - `q`: exit without stopping PrairieLearn

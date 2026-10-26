@@ -12,13 +12,13 @@ export type RuntimePaths = {
   backendLog: string;
 };
 
-export function stateDirectory(env: NodeJS.ProcessEnv = process.env): string {
+function stateDirectory(env: NodeJS.ProcessEnv = process.env): string {
   if (env.PRAIRIELEARN_STATE_DIR) return expandHome(env.PRAIRIELEARN_STATE_DIR);
   if (env.XDG_STATE_HOME) return path.join(expandHome(env.XDG_STATE_HOME), "prairielearn");
   return path.join(expandHome("~"), ".local", "state", "prairielearn");
 }
 
-export function runtimeDirectory(env: NodeJS.ProcessEnv = process.env): string {
+function runtimeDirectory(env: NodeJS.ProcessEnv = process.env): string {
   if (env.PRAIRIELEARN_RUNTIME_DIR) return expandHome(env.PRAIRIELEARN_RUNTIME_DIR);
   const uid = typeof process.getuid === "function" ? process.getuid() : 0;
   const base = env.XDG_RUNTIME_DIR ? expandHome(env.XDG_RUNTIME_DIR) : os.tmpdir();

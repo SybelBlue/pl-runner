@@ -166,6 +166,12 @@ function App(): React.ReactElement {
 
   useInput((input, key) => {
     if (view === "config") {
+      if (active) {
+        if (key.upArrow) setFieldIndex((index) => Math.max(0, index - 1));
+        else if (key.downArrow) setFieldIndex((index) => Math.min(fields.length - 1, index + 1));
+        else if (!key.leftArrow && !key.rightArrow) setView("dashboard");
+        return;
+      }
       if (editing) {
         const editingBranch = draft.mode === "git" && editing.key === "branch";
         const editingDirectory = isDirectoryField(draft, editing.key);
@@ -244,8 +250,10 @@ function App(): React.ReactElement {
     }
 
     if (input === "q") exit();
-    else if (input === "c" && !active) {
-      setDraft(status?.savedConfig ?? defaultGitConfig);
+    else if (input === "c") {
+      setDraft(status?.savedConfig ?? status?.instance?.config ?? defaultGitConfig);
+      setFieldIndex(0);
+      setEditing(null);
       setView("config");
     } else if (input === "s" && !active) void start();
     else if (input === "x" && active) void perform(() => requestBackend("instance.stop"));
@@ -269,6 +277,7 @@ function App(): React.ReactElement {
       directorySuggestionsLoading={directorySuggestionsLoading}
       directorySuggestionsError={directorySuggestionsError}
       error={error}
+      readOnly={active}
     />;
   }
 
@@ -302,7 +311,7 @@ export function canRestart(state: LifecycleState | undefined): boolean {
 
 export function DashboardMenu({ state }: { state: LifecycleState | undefined }): React.ReactElement {
   const active = state !== undefined && isActive(state);
-  const items = active ? ["x stop"] : ["s start", "c configure"];
+  const items = active ? ["x stop", "c view config"] : ["s start", "c configure"];
   if (canRestart(state)) items.push("r restart");
   items.push("↑/↓/wheel scroll", "q quit");
   return <Text dimColor>Keys: {items.join(" · ")}</Text>;
@@ -352,6 +361,7 @@ export function ConfigView(props: {
   directorySuggestionsLoading?: boolean;
   directorySuggestionsError?: string | null;
   error: string | null;
+  readOnly?: boolean;
 }): React.ReactElement {
   const editingDirectory = props.editing ? isDirectoryField(props.draft, props.editing.key) : false;
   const suggestions = props.editing?.key === "branch"
@@ -363,7 +373,9 @@ export function ConfigView(props: {
   const selectedField = props.fields[props.fieldIndex];
   return <Box flexDirection="column">
     <Text bold color="cyan">Configuration · {props.draft.mode}</Text>
-    <Text dimColor>s switch to {props.draft.mode === "git" ? "docker" : "git"} · ↑/↓ select · Enter edit/toggle · Tab complete path · c confirm · q/Esc cancel</Text>
+    {props.readOnly
+      ? <Text color="yellow">Stop current run to modify config · ↑/↓ select · any other key back</Text>
+      : <Text dimColor>s switch to {props.draft.mode === "git" ? "docker" : "git"} · ↑/↓ select · Enter edit/toggle · Tab complete path · c confirm · q/Esc cancel</Text>}
     <Box marginTop={1} flexDirection="column">
       {props.fields.map((field, index) => (
         <Text key={field.key} color={index === props.fieldIndex ? "cyan" : undefined}>

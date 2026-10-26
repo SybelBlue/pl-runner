@@ -77,11 +77,13 @@ test("shows only dashboard actions valid for the lifecycle state", () => {
 
   view.rerender(<DashboardMenu state="running" />);
   assert.match(view.lastFrame() ?? "", /x stop/);
+  assert.match(view.lastFrame() ?? "", /c view config/);
   assert.match(view.lastFrame() ?? "", /r restart/);
   assert.doesNotMatch(view.lastFrame() ?? "", /s start|c configure/);
 
   view.rerender(<DashboardMenu state="starting" />);
   assert.match(view.lastFrame() ?? "", /x stop/);
+  assert.match(view.lastFrame() ?? "", /c view config/);
   assert.doesNotMatch(view.lastFrame() ?? "", /s start|r restart|c configure/);
 });
 
@@ -198,6 +200,24 @@ test("configuration mode control names git as the target from Docker mode", () =
   />);
 
   assert.match(view.lastFrame() ?? "", /s switch to git/);
+});
+
+test("shows active-run configuration as view-only", () => {
+  const view = render(<ConfigView
+    draft={gitConfig}
+    fields={configFields(gitConfig)}
+    fieldIndex={0}
+    editing={null}
+    hostInfo={null}
+    error={null}
+    readOnly
+  />);
+  const frame = view.lastFrame() ?? "";
+
+  assert.match(frame, /Stop current run to modify config/);
+  assert.match(frame, /↑\/↓ select · any other key back/);
+  assert.match(frame, /PrairieLearn path: \/PrairieLearn/);
+  assert.doesNotMatch(frame, /switch to docker|edit\/toggle|c confirm/);
 });
 
 test("offers repository branches while editing the branch field", () => {

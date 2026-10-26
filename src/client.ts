@@ -34,7 +34,7 @@ export async function backendIsRunning(): Promise<boolean> {
   return true;
 }
 
-export async function startBackend(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+async function startBackend(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   if (await backendIsRunning()) return;
   const paths = await ensureRuntimePaths(env);
   const entry = nodeEntrypoint("backend-entry");
@@ -51,7 +51,7 @@ export async function startBackend(env: NodeJS.ProcessEnv = process.env): Promis
   }
 }
 
-export async function waitForBackend(timeoutMs = 5_000): Promise<net.Socket> {
+async function waitForBackend(timeoutMs = 5_000): Promise<net.Socket> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const socket = await connectBackend();

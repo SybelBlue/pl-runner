@@ -11,7 +11,7 @@ import type {
   WorkerState,
 } from "./types.js";
 
-export const EMPTY_STATE: SupervisorState = {
+const EMPTY_STATE: SupervisorState = {
   schemaVersion: 2,
   savedConfig: null,
   currentRun: null,
@@ -56,7 +56,7 @@ export async function saveSupervisorState(
   await fs.rename(temporary, paths.stateFile);
 }
 
-export function workerStateFile(runDir: string): string {
+function workerStateFile(runDir: string): string {
   return path.join(runDir, "worker-state.json");
 }
 

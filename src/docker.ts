@@ -3,12 +3,12 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { runCommand, runInteractiveProcess } from "./process.js";
 import { resolvePath, systemTmpDir, withoutVirtualEnv } from "./path.js";
-import type { DockerConfig, DockerImageTag, DockerOptions, Logger } from "./types.js";
+import type { DockerImageTag, DockerOptions, Logger } from "./types.js";
 import type { LaunchControl } from "./run.js";
 
-export const DOCKER_IMAGE_REPOSITORY = "prairielearn/prairielearn";
+const DOCKER_IMAGE_REPOSITORY = "prairielearn/prairielearn";
 export const DEFAULT_DOCKER_IMAGE_TAG: DockerImageTag = "us-prod-live";
-export const SUPPORTED_DOCKER_IMAGE_TAGS: DockerImageTag[] = ["us-prod-live", "latest"];
+const SUPPORTED_DOCKER_IMAGE_TAGS: DockerImageTag[] = ["us-prod-live", "latest"];
 
 export type DockerImageInfo = {
   tag: DockerImageTag;
@@ -43,10 +43,6 @@ function requireDockerImageTag(tag: string | undefined): DockerImageTag {
   if (tag === undefined) return DEFAULT_DOCKER_IMAGE_TAG;
   if (SUPPORTED_DOCKER_IMAGE_TAGS.includes(tag as DockerImageTag)) return tag as DockerImageTag;
   throw new Error(`unsupported Docker image tag: ${tag}. Supported tags: ${SUPPORTED_DOCKER_IMAGE_TAGS.join(", ")}`);
-}
-
-export async function dockerConfigFromOptions(options: Partial<DockerOptions>): Promise<DockerConfig> {
-  return { mode: "docker", ...normalizeDockerOptions(options) };
 }
 
 export async function launchDocker(
