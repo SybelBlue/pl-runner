@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import os from "node:os";
 import test from "node:test";
 import React from "react";
 import { Box, renderToString } from "ink";
@@ -6,10 +7,14 @@ import { render } from "ink-testing-library";
 import {
   branchSuggestions,
   ConfigView,
+  DashboardMenu,
   LogLine,
   StatusLine,
   canRestart,
   configFields,
+  formatConfig,
+  logColor,
+  titlebarSequence,
   visibleLogEvents,
 } from "../src/tui.tsx";
 import type { LaunchConfig, RunEvent, SupervisorStatus } from "../src/types.ts";
@@ -62,6 +67,31 @@ test("only enables restart while the instance is running", () => {
   for (const state of [undefined, "stopped", "failed", "preparing", "starting", "stopping"] as const) {
     assert.equal(canRestart(state), false);
   }
+});
+
+test("shows only dashboard actions valid for the lifecycle state", () => {
+  const view = render(<DashboardMenu state={undefined} />);
+  assert.match(view.lastFrame() ?? "", /s start/);
+  assert.match(view.lastFrame() ?? "", /c configure/);
+  assert.doesNotMatch(view.lastFrame() ?? "", /x stop|r restart|End follow/);
+
+  view.rerender(<DashboardMenu state="running" />);
+  assert.match(view.lastFrame() ?? "", /x stop/);
+  assert.match(view.lastFrame() ?? "", /r restart/);
+  assert.doesNotMatch(view.lastFrame() ?? "", /s start|c configure/);
+
+  view.rerender(<DashboardMenu state="starting" />);
+  assert.match(view.lastFrame() ?? "", /x stop/);
+  assert.doesNotMatch(view.lastFrame() ?? "", /s start|r restart|c configure/);
+});
+
+test("removes the user-home prefix from titlebar configuration summaries", () => {
+  const home = os.homedir();
+  assert.equal(formatConfig({ ...gitConfig, path: `${home}/Documents/PrairieLearn` }), "git Documents/PrairieLearn @ main");
+  assert.equal(
+    titlebarSequence("/Users/example/Documents/PrairieLearn", "/Users/example"),
+    "\u001B]0;Documents/PrairieLearn\u0007",
+  );
 });
 
 test("hides configuration diagnostics until their field is highlighted", () => {
@@ -190,6 +220,41 @@ test("offers repository branches while editing the branch field", () => {
   assert.match(frame, /Use “feat” as branch\/ref · custom/);
 });
 
+test("offers directory autocomplete while editing path fields", () => {
+  const view = render(<ConfigView
+    draft={gitConfig}
+    fields={configFields(gitConfig)}
+    fieldIndex={0}
+    editing={{ key: "path", value: "/Users/example/Doc", suggestionIndex: 0 }}
+    hostInfo={null}
+    directorySuggestions={[
+      { label: "Documents", value: "/Users/example/Documents", hint: "directory" },
+      { label: "Docker", value: "/Users/example/Docker", hint: "directory" },
+    ]}
+    error={null}
+  />);
+  const frame = view.lastFrame() ?? "";
+  assert.match(frame, /Tab complete/);
+  assert.match(frame, /Documents · directory/);
+  assert.match(frame, /Docker · directory/);
+});
+
+test("shows directory autocomplete progress and empty results", () => {
+  const props = {
+    draft: gitConfig,
+    fields: configFields(gitConfig),
+    fieldIndex: 0,
+    editing: { key: "path", value: "/Users/example/Doc", suggestionIndex: 0 },
+    hostInfo: null,
+    error: null,
+  };
+  const view = render(<ConfigView {...props} directorySuggestionsLoading />);
+  assert.match(view.lastFrame() ?? "", /Loading directories…/);
+
+  view.rerender(<ConfigView {...props} directorySuggestions={[]} />);
+  assert.match(view.lastFrame() ?? "", /No matching directories/);
+});
+
 test("filters and classifies branch autocomplete suggestions", () => {
   const hostInfo = {
     currentBranch: "main",
@@ -213,15 +278,25 @@ test("filters and classifies branch autocomplete suggestions", () => {
   ]);
 });
 
-test("filters and scrolls the merged log model", () => {
+test("scrolls the complete merged log model without filtering", () => {
   const events: RunEvent[] = [
     event(1, "system"),
     event(2, "stdout"),
     event(3, "stderr"),
     event(4, "stdout"),
   ];
-  assert.deepEqual(visibleLogEvents(events, "stdout", 0, 10).map((item) => item.seq), [1, 2, 4]);
-  assert.deepEqual(visibleLogEvents(events, "all", 1, 2).map((item) => item.seq), [2, 3]);
+  assert.deepEqual(visibleLogEvents(events, 0, 10).map((item) => item.seq), [1, 2, 3, 4]);
+  assert.deepEqual(visibleLogEvents(events, 1, 2).map((item) => item.seq), [2, 3]);
+});
+
+test("keeps normal output neutral and accents status, warnings, and errors", () => {
+  assert.equal(logColor({ ...event(1, "system"), message: "starting git run" }), "cyan");
+  assert.equal(logColor({ ...event(2, "stdout"), message: "server ready" }), "green");
+  assert.equal(logColor({ ...event(3, "system"), message: "warning: using offline defaults" }), "yellow");
+  assert.equal(logColor({ ...event(4, "stderr"), message: "command failed" }), "red");
+  assert.equal(logColor({ ...event(5, "system"), phase: "failed", message: "managed instance exited with 130" }), "red");
+  assert.equal(logColor({ ...event(6, "stdout"), message: "Compiling application modules" }), undefined);
+  assert.equal(logColor({ ...event(7, "stderr"), message: "A tool wrote an ordinary diagnostic" }), undefined);
 });
 
 test("indents wrapped log output past the event prefix", () => {

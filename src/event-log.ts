@@ -16,6 +16,7 @@ export class EventLog {
   private seq = 0;
   private tail: RunEvent[] = [];
   private writeQueue: Promise<void> = Promise.resolve();
+  private outputFilter = new OutputFilter();
 
   constructor(
     private readonly file: string,
@@ -26,7 +27,7 @@ export class EventLog {
     await fs.mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 });
     const existing = await readEvents(this.file);
     this.seq = existing.at(-1)?.seq ?? 0;
-    this.tail = existing.slice(-MEMORY_TAIL_ENTRIES);
+    this.tail = existing.filter((event) => this.outputFilter.keep(event)).slice(-MEMORY_TAIL_ENTRIES);
   }
 
   append(source: LogSource, phase: string, rawMessage: string): Promise<void> {
@@ -37,15 +38,18 @@ export class EventLog {
       const lines: string[] = [];
       for (const message of messages) {
         const event: RunEvent = {
-          seq: ++this.seq,
+          seq: this.seq + 1,
           timestamp: new Date().toISOString(),
           source,
           phase,
           message,
         };
+        if (!this.outputFilter.keep(event)) continue;
+        this.seq += 1;
         this.tail.push(event);
         lines.push(JSON.stringify(event));
       }
+      if (lines.length === 0) return;
       this.tail = this.tail.slice(-MEMORY_TAIL_ENTRIES);
       await fs.appendFile(this.file, `${lines.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
       await capEventLog(this.file);
@@ -74,6 +78,39 @@ export function eventLogger(log: EventLog, phase: () => string): Logger {
       void log.append("system", phase(), message);
     },
   };
+}
+
+export function omitDependencyPackageChanges(events: RunEvent[]): RunEvent[] {
+  const filter = new OutputFilter();
+  return events.filter((event) => filter.keep(event));
+}
+
+class OutputFilter {
+  private uvOutput: "normal" | "installed" | "package-changes" = "normal";
+
+  keep(event: Pick<RunEvent, "source" | "phase" | "message">): boolean {
+    if (event.phase !== "dependencies" || event.source !== "stderr") {
+      this.uvOutput = "normal";
+      return true;
+    }
+
+    if (/^\s*(?:Installed|Uninstalled)\s+\d+\s+packages?\s+in\b/.test(event.message)) {
+      this.uvOutput = "installed";
+      return true;
+    }
+    if (this.uvOutput === "installed" && /^\s*Bytecode compiled\s+\d+\s+files?\s+in\b/.test(event.message)) {
+      return true;
+    }
+    if (this.uvOutput === "installed" && /^\s*$/.test(event.message)) return false;
+    if (this.uvOutput === "installed" && /^\s*[+-](?:\s|$)/.test(event.message)) {
+      this.uvOutput = "package-changes";
+      return false;
+    }
+    if (this.uvOutput === "package-changes") return false;
+
+    this.uvOutput = "normal";
+    return true;
+  }
 }
 
 export async function readEvents(file: string, limit = MEMORY_TAIL_ENTRIES, afterSeq = 0): Promise<RunEvent[]> {

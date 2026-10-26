@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { checkPreflightDependencies } from "./deps.js";
 import { dockerImageInfo, startDockerDaemon } from "./docker.js";
 import { nodeEntrypoint } from "./entrypoint.js";
-import { readEvents } from "./event-log.js";
+import { omitDependencyPackageChanges, readEvents } from "./event-log.js";
 import { currentBranch, localBranches, remoteOnlyBranches, validateProjectPath } from "./git.js";
 import { hasInternet } from "./internet.js";
 import { createLogger } from "./logger.js";
@@ -383,7 +383,9 @@ async function tailLogs(state: SupervisorState, payload: unknown): Promise<RunEv
   const limit = Math.min(1_000, Math.max(1, numberValue(input.limit, 200)));
   const afterSeq = numberValue(input.afterSeq, 0);
   const stream = typeof input.stream === "string" ? input.stream : "all";
-  const events = await readEvents(eventLogFile(state.currentRun.runDir), 1_000, afterSeq);
+  const events = omitDependencyPackageChanges(
+    await readEvents(eventLogFile(state.currentRun.runDir), 1_000, afterSeq),
+  );
   const filtered = stream === "stdout" || stream === "stderr"
     ? events.filter((event) => event.source === stream || event.source === "system")
     : events;
