@@ -40,7 +40,7 @@ const defaultGitConfig: LaunchConfig = {
 };
 
 export async function launchTui(): Promise<void> {
-  const instance = render(<App />, { exitOnCtrlC: false });
+  const instance = render(<App />, { exitOnCtrlC: false, alternateScreen: true });
   await instance.waitUntilExit();
 }
 
