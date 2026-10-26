@@ -10,7 +10,6 @@ const logger: Logger = {
   error: () => undefined,
   warn: () => undefined,
   info: () => undefined,
-  debug: () => undefined,
 };
 
 test("offline defaults disable network-dependent Git behavior", () => {

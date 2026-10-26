@@ -73,9 +73,6 @@ export function eventLogger(log: EventLog, phase: () => string): Logger {
     info(message) {
       void log.append("system", phase(), message);
     },
-    debug(message) {
-      void log.append("system", phase(), message);
-    },
   };
 }
 

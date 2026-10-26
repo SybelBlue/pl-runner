@@ -360,7 +360,6 @@ async function inspectHost(payload: unknown): Promise<unknown> {
       error: (message: string) => warnings.push(message),
       warn: (message: string) => warnings.push(message),
       info: () => undefined,
-      debug: () => undefined,
     };
     result.validProjectPath = await validateProjectPath(input.path, logger);
     result.warnings = warnings;

@@ -268,6 +268,7 @@ export function ConfigView(props: {
     ? branchSuggestions(props.hostInfo, props.editing.value)
     : [];
   const suggestionIndex = Math.min(props.editing?.suggestionIndex ?? 0, suggestions.length - 1);
+  const selectedField = props.fields[props.fieldIndex];
   return <Box flexDirection="column">
     <Text bold color="cyan">Configuration · {props.draft.mode}</Text>
     <Text dimColor>s switch to {props.draft.mode === "git" ? "docker" : "git"} · ↑/↓ select · Enter edit/toggle · c confirm · q/Esc cancel</Text>
@@ -286,14 +287,13 @@ export function ConfigView(props: {
         </Text>
       ))}
     </Box> : null}
-    {props.hostInfo ? <Box marginTop={1} flexDirection="column">
-      <Text dimColor>Network: {props.hostInfo.internetAvailable ? "online" : "offline"}</Text>
-      <Text dimColor>Dependencies: {formatDependencies(props.hostInfo.dependencies)}</Text>
-      {props.draft.mode === "git" ? <>
-        <Text dimColor>Current branch: {String(props.hostInfo.currentBranch ?? "unknown")}</Text>
-        <Text dimColor>Available branches: {formatBranches(props.hostInfo)}</Text>
-      </> : <Text dimColor>Images: {formatDockerImages(props.hostInfo.dockerImages)}</Text>}
+    {props.hostInfo && selectedField?.key === "branch" && props.editing?.key !== "branch" ? <Box marginTop={1} flexDirection="column">
+      <Text dimColor>Current branch: {String(props.hostInfo.currentBranch ?? "unknown")}</Text>
+      <Text dimColor>Available branches: {formatBranches(props.hostInfo)}</Text>
     </Box> : null}
+    {props.hostInfo && selectedField?.key === "force_rebuild" ? <Text dimColor>Dependencies: {formatDependencies(props.hostInfo.dependencies)}</Text> : null}
+    {props.hostInfo && selectedField?.key === "local_only" ? <Text dimColor>Network: {props.hostInfo.internetAvailable ? "online" : "offline"}</Text> : null}
+    {props.hostInfo && selectedField?.key === "image" ? <Text dimColor>Images: {formatDockerImages(props.hostInfo.dockerImages)}</Text> : null}
     {props.error ? <Text color="red">{props.error}</Text> : null}
   </Box>;
 }

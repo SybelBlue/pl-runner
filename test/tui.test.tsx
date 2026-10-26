@@ -64,7 +64,7 @@ test("only enables restart while the instance is running", () => {
   }
 });
 
-test("renders backend-driven configuration details", () => {
+test("hides configuration diagnostics until their field is highlighted", () => {
   const fields = configFields(gitConfig);
   const view = render(<ConfigView
     draft={gitConfig}
@@ -80,7 +80,81 @@ test("renders backend-driven configuration details", () => {
   assert.match(frame, /c confirm/);
   assert.match(frame, /q\/Esc cancel/);
   assert.match(frame, /PrairieLearn path: \/PrairieLearn/);
-  assert.match(frame, /Available branches: main, feature/);
+  assert.doesNotMatch(frame, /Network:/);
+  assert.doesNotMatch(frame, /Dependencies:/);
+  assert.doesNotMatch(frame, /Current branch:/);
+  assert.doesNotMatch(frame, /Available branches:/);
+});
+
+test("shows only the diagnostic relevant to the highlighted configuration field", () => {
+  const fields = configFields(gitConfig);
+  const hostInfo = {
+    internetAvailable: true,
+    dependencies: { git: true, docker: true, pnpm: true, uv: true },
+    currentBranch: "main",
+    localBranches: ["main", "feature"],
+  };
+  const view = render(<ConfigView
+    draft={gitConfig}
+    fields={fields}
+    fieldIndex={1}
+    editing={null}
+    hostInfo={hostInfo}
+    error={null}
+  />);
+
+  assert.match(view.lastFrame() ?? "", /Current branch: main/);
+  assert.match(view.lastFrame() ?? "", /Available branches: main, feature/);
+  assert.doesNotMatch(view.lastFrame() ?? "", /Network:|Dependencies:/);
+
+  view.rerender(<ConfigView
+    draft={gitConfig}
+    fields={fields}
+    fieldIndex={2}
+    editing={null}
+    hostInfo={hostInfo}
+    error={null}
+  />);
+  assert.match(view.lastFrame() ?? "", /Dependencies: git:ok docker:ok pnpm:ok uv:ok/);
+  assert.doesNotMatch(view.lastFrame() ?? "", /Network:|Current branch:|Available branches:/);
+
+  view.rerender(<ConfigView
+    draft={gitConfig}
+    fields={fields}
+    fieldIndex={3}
+    editing={null}
+    hostInfo={hostInfo}
+    error={null}
+  />);
+  assert.match(view.lastFrame() ?? "", /Network: online/);
+  assert.doesNotMatch(view.lastFrame() ?? "", /Dependencies:|Current branch:|Available branches:/);
+});
+
+test("shows Docker image details only while the image field is highlighted", () => {
+  const fields = configFields(dockerConfig);
+  const hostInfo = {
+    internetAvailable: true,
+    dockerImages: [{ tag: "us-prod-live", updatedAt: "2026-10-26T12:00:00.000Z" }],
+  };
+  const view = render(<ConfigView
+    draft={dockerConfig}
+    fields={fields}
+    fieldIndex={0}
+    editing={null}
+    hostInfo={hostInfo}
+    error={null}
+  />);
+  assert.doesNotMatch(view.lastFrame() ?? "", /Images:/);
+
+  view.rerender(<ConfigView
+    draft={dockerConfig}
+    fields={fields}
+    fieldIndex={1}
+    editing={null}
+    hostInfo={hostInfo}
+    error={null}
+  />);
+  assert.match(view.lastFrame() ?? "", /Images: us-prod-live \(2026-10-26\)/);
 });
 
 test("configuration mode control names git as the target from Docker mode", () => {
