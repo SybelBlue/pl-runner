@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
+import { Box, renderToString } from "ink";
 import { render } from "ink-testing-library";
 import {
   branchSuggestions,
   ConfigView,
+  LogLine,
   StatusLine,
   configFields,
   visibleLogEvents,
@@ -112,6 +114,19 @@ test("filters and scrolls the merged log model", () => {
   ];
   assert.deepEqual(visibleLogEvents(events, "stdout", 0, 10).map((item) => item.seq), [1, 2, 4]);
   assert.deepEqual(visibleLogEvents(events, "all", 1, 2).map((item) => item.seq), [2, 3]);
+});
+
+test("indents wrapped log output past the event prefix", () => {
+  const longEvent: RunEvent = {
+    ...event(304, "stdout"),
+    message: "$ tsx watch --clear-screen=false --tsconfig src/tsconfig.json --include **/*.sql",
+  };
+  const output = renderToString(<Box width={50}><LogLine event={longEvent} /></Box>, { columns: 50 });
+  const lines = output.split("\n");
+
+  assert.ok(lines.length > 1);
+  assert.equal(lines[0]?.slice(0, 18), " 304 server       ");
+  for (const line of lines.slice(1)) assert.match(line, /^ {18}/);
 });
 
 function event(seq: number, source: RunEvent["source"]): RunEvent {

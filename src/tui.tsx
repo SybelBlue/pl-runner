@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Box, Text, render, useApp, useInput, useStdout } from "ink";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, render, useApp, useBoxMetrics, useInput, useStdout } from "ink";
 import { requestBackend } from "./client.js";
 import { isActive } from "./backend.js";
+import { mouseEventIsInside, useMouseWheel } from "./mouse.js";
 import { resolvePath } from "./path.js";
 import { RemoteError } from "./protocol.js";
+import type { DOMElement } from "ink";
 import type { LaunchConfig, RunEvent, RunRecord, SupervisorStatus } from "./types.js";
 
 type View = "dashboard" | "config";
@@ -47,6 +49,8 @@ export async function launchTui(): Promise<void> {
 function App(): React.ReactElement {
   const { exit } = useApp();
   useStdout();
+  const logWindowRef = useRef<DOMElement>(null);
+  const logWindow = useBoxMetrics(logWindowRef);
   const [status, setStatus] = useState<SupervisorStatus | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -94,6 +98,11 @@ function App(): React.ReactElement {
   const displayedErrorCode = errorCode ?? (status?.instance?.state === "failed" ? status.instance.errorCode : null);
   const displayedError = error ?? (status?.instance?.state === "failed" ? status.instance.errorMessage : null);
   const fields = configFields(draft);
+
+  useMouseWheel((event) => {
+    if (!logWindow.hasMeasured || !mouseEventIsInside(event, logWindow)) return;
+    setScrollOffset((offset) => Math.max(0, Math.min(events.length, offset + (event.direction === "up" ? 1 : -1))));
+  }, { isActive: view === "dashboard" });
 
   const perform = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -218,16 +227,24 @@ function App(): React.ReactElement {
     </Box>
     <StatusLine status={status} />
     <Text>Saved: {formatConfig(status?.savedConfig ?? null)}</Text>
-    <Text dimColor>Keys: s start · x stop · r restart · c configure · f filter · ↑/↓ scroll · End follow · q quit</Text>
+    <Text dimColor>Keys: s start · x stop · r restart · c configure · f filter · ↑/↓/wheel scroll · End follow · q quit</Text>
     {confirmAction ? <Text color="yellow">Confirm {confirmAction}? y/n</Text> : <Text>Logs: {filter} · {scrollOffset === 0 ? "following" : `${scrollOffset} lines from bottom`}</Text>}
-    <Box borderStyle="round" borderColor="gray" flexDirection="column" flexGrow={1} overflow="hidden">
-      {visible.length === 0 ? <Text dimColor>No lifecycle output yet.</Text> : visible.map((event) => (
-        <Text key={event.seq} color={event.source === "stderr" ? "red" : event.source === "system" ? "yellow" : undefined}>
-          <Text dimColor>{String(event.seq).padStart(4)} {event.phase.padEnd(12)} </Text>{event.message}
-        </Text>
-      ))}
+    <Box ref={logWindowRef} borderStyle="round" borderColor="gray" flexDirection="column" flexGrow={1} overflow="hidden">
+      {visible.length === 0 ? <Text dimColor>No lifecycle output yet.</Text> : visible.map((event) => <LogLine key={event.seq} event={event} />)}
     </Box>
     {displayedError ? <Text color="red">{displayedError}{displayedErrorCode === "PULL_FAILED" ? " · p: retry without pull" : displayedErrorCode === "DOCKER_DAEMON_UNAVAILABLE" ? " · d: start Docker and retry" : ""}</Text> : null}
+  </Box>;
+}
+
+export function LogLine({ event }: { event: RunEvent }): React.ReactElement {
+  const color = event.source === "stderr" ? "red" : event.source === "system" ? "yellow" : undefined;
+  return <Box>
+    <Box width={18} flexShrink={0}>
+      <Text dimColor color={color}>{String(event.seq).padStart(4)} {event.phase.padEnd(12)} </Text>
+    </Box>
+    <Box flexGrow={1}>
+      <Text color={color}>{event.message}</Text>
+    </Box>
   </Box>;
 }
 
