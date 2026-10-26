@@ -8,7 +8,12 @@ import {
   useInput,
   useStdout,
 } from "ink";
-import { killBackend, requestBackend, restartBackend } from "./client.js";
+import {
+  cleanStopBackend,
+  killBackend,
+  requestBackend,
+  restartBackend,
+} from "./client.js";
 import {
   isActive,
   nextAvailablePort,
@@ -130,6 +135,7 @@ function App(): React.ReactElement {
   const [backendBusy, setBackendBusy] = useState(false);
   const [backendMessage, setBackendMessage] = useState<string | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
+  const [confirmCleanStop, setConfirmCleanStop] = useState(false);
 
   const refresh = async (preferredId = selectedId) => {
     const generation = ++refreshGeneration.current;
@@ -308,17 +314,26 @@ function App(): React.ReactElement {
     setConfirmDelete(false);
   };
 
-  const controlBackend = async (restart: boolean) => {
+  const controlBackend = async (action: "kill" | "restart" | "clean-stop") => {
     setBackendBusy(true);
+    setConfirmCleanStop(false);
     setBackendMessage(null);
     setBackendError(null);
     refreshGeneration.current += 1;
     try {
-      if (restart) {
+      if (action === "restart") {
         const next = await restartBackend(status?.backend.pid);
         setStatus(next);
         setConnected(true);
         setBackendMessage(`Backend restarted (pid ${next.backend.pid}).`);
+      } else if (action === "clean-stop") {
+        const result = await cleanStopBackend();
+        setStatus(null);
+        setConnected(false);
+        setBackendMessage(
+          `Clean stop complete: ${result.stoppedInstanceIds.length} managed ${result.stoppedInstanceIds.length === 1 ? "instance" : "instances"} and backend pid ${result.backendPid} stopped.`,
+        );
+        exit();
       } else {
         const result = await killBackend(status?.backend.pid);
         setStatus(null);
@@ -340,12 +355,17 @@ function App(): React.ReactElement {
     if (view === "backend") {
       if (input === "q") exit();
       else if (backendBusy) return;
-      else if (input === "b" || key.escape) {
+      else if (confirmCleanStop) {
+        if (input === "x") void controlBackend("clean-stop");
+        else if (key.escape || input === "n") setConfirmCleanStop(false);
+      } else if (input === "b" || key.escape) {
         setBackendMessage(null);
         setBackendError(null);
+        setConfirmCleanStop(false);
         setView("dashboard");
-      } else if (input === "k") void controlBackend(false);
-      else if (input === "r") void controlBackend(true);
+      } else if (input === "k") void controlBackend("kill");
+      else if (input === "r") void controlBackend("restart");
+      else if (input === "x") setConfirmCleanStop(true);
       return;
     }
     if (view === "config") {
@@ -573,6 +593,7 @@ function App(): React.ReactElement {
         connected={connected}
         status={status}
         busy={backendBusy}
+        confirmCleanStop={confirmCleanStop}
         message={backendMessage}
         error={backendError}
       />
@@ -698,12 +719,14 @@ export function BackendView({
   connected,
   status,
   busy = false,
+  confirmCleanStop = false,
   message,
   error,
 }: {
   connected: boolean;
   status: SupervisorStatus | null;
   busy?: boolean;
+  confirmCleanStop?: boolean;
   message?: string | null;
   error?: string | null;
 }): React.ReactElement {
@@ -718,10 +741,21 @@ export function BackendView({
           ? ` · pid ${status.backend.pid} · v${status.backend.packageVersion} · protocol ${status.backend.protocolVersion}`
           : ""}
       </Text>
-      <Text dimColor>k kill · r restart · b/Esc back · q quit</Text>
       <Text dimColor>
-        Killing the backend preserves managed PrairieLearn instances.
+        k kill backend only · x clean stop · r restart · b/Esc back · q quit
       </Text>
+      <Text dimColor>
+        k leaves durable workers and PrairieLearn processes running.
+      </Text>
+      <Text dimColor>
+        x stops all managed processes, then the backend, so another version can
+        start cleanly. The manager exits when the clean stop completes.
+      </Text>
+      {confirmCleanStop ? (
+        <Text color="yellow">
+          Stop all managed instances and the backend? x confirm · n/Esc cancel
+        </Text>
+      ) : null}
       {busy ? <Text color="yellow">Updating backend…</Text> : null}
       {message ? <Text color="green">{message}</Text> : null}
       {error ? <Text color="red">{error}</Text> : null}

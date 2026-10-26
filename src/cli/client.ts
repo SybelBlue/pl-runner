@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { nodeEntrypoint } from "../system/entrypoint.js";
 import { ensureRuntimePaths, runtimePaths } from "../system/paths.js";
 import { runCommand } from "../system/process.js";
+import { isActive } from "../core/instances.js";
 import {
   PROTOCOL_VERSION,
   RemoteError,
@@ -23,6 +24,11 @@ export type RequestOptions = {
 
 export type BackendKillResult = {
   killedPids: number[];
+};
+
+export type BackendCleanStopResult = {
+  backendPid: number;
+  stoppedInstanceIds: string[];
 };
 
 let compatibilityCheck: Promise<void> | null = null;
@@ -157,6 +163,59 @@ async function waitForBackend(
     "NOT_RUNNING",
     "timed out waiting for pl-runner backend to start",
   );
+}
+
+/**
+ * Stops every active managed instance before gracefully shutting down the
+ * supervisor. Saved profiles and completed-run history are preserved.
+ */
+export async function cleanStopBackend(): Promise<BackendCleanStopResult> {
+  const status = await requestBackend(
+    "backend.status",
+    {},
+    { autoStart: false },
+  );
+  const active = status.instances.filter(
+    (instance) => instance.run && isActive(instance.run.state),
+  );
+  const stoppedInstanceIds: string[] = [];
+  const stoppingRuns: Array<{ instanceId: string; runId: string }> = [];
+
+  for (const instance of active) {
+    const run = await requestBackend(
+      "instance.stop",
+      { instanceId: instance.id },
+      { autoStart: false },
+    );
+    if (run) {
+      stoppedInstanceIds.push(instance.id);
+      stoppingRuns.push({ instanceId: instance.id, runId: run.runId });
+    }
+  }
+
+  await Promise.all(
+    stoppingRuns.map(({ instanceId, runId }) =>
+      waitForTerminal(instanceId, runId),
+    ),
+  );
+  const finalStatus = await requestBackend(
+    "backend.status",
+    {},
+    { autoStart: false },
+  );
+  const remaining = finalStatus.instances.filter(
+    (instance) => instance.run && isActive(instance.run.state),
+  );
+  if (remaining.length > 0) {
+    throw new RemoteError(
+      "INTERNAL_ERROR",
+      `managed instances did not stop: ${remaining.map((instance) => instance.name).join(", ")}`,
+    );
+  }
+
+  await requestBackend("backend.shutdown", {}, { autoStart: false });
+  await waitForBackendStop(5_000);
+  return { backendPid: status.backend.pid, stoppedInstanceIds };
 }
 
 export async function waitForStart(

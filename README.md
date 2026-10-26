@@ -32,7 +32,7 @@ Lifecycle and log commands accept `--instance <name>`. Without it, the CLI selec
 - `x`: stop the selected instance
 - `r`: restart the selected running instance
 - `c`: configure the selected Git or Docker profile, or view an active run's configuration read-only
-- `b`: open backend controls; `k` force-kills an unresponsive supervisor and `r` restarts it without stopping managed instances
+- `b`: open backend controls; `k` force-kills only the supervisor, `r` restarts it while preserving managed instances, and `x` stops all managed processes plus the backend and exits the manager for a clean version switch
 - arrow keys/PageUp/PageDown or the mouse wheel over the log pane: scroll logs
 - `End`: resume auto-follow
 - `q`: exit without stopping PrairieLearn

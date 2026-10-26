@@ -194,9 +194,24 @@ test("shows backend recovery controls in a dedicated view", () => {
   const frame = view.lastFrame() ?? "";
   assert.match(frame, /Backend controls/);
   assert.match(frame, /pid 123 · v0\.3\.0 · protocol 3/);
-  assert.match(frame, /k kill · r restart · b\/Esc back · q quit/);
-  assert.match(frame, /preserves managed PrairieLearn instances/);
+  assert.match(frame, /k kill backend only/);
+  assert.match(frame, /x clean stop/);
+  assert.match(frame, /r restart/);
+  assert.match(
+    frame,
+    /leaves durable workers and PrairieLearn processes running/,
+  );
+  assert.match(frame, /stops all managed processes, then the backend/);
+  assert.match(frame, /manager\s+exits when the clean stop completes/);
   assert.match(frame, /Backend restarted/);
+
+  view.rerender(
+    <BackendView connected={true} status={null} confirmCleanStop={true} />,
+  );
+  assert.match(
+    view.lastFrame() ?? "",
+    /Stop all managed instances and the backend\? x confirm · n\/Esc cancel/,
+  );
 });
 
 test("removes the user-home prefix from titlebar configuration summaries", () => {

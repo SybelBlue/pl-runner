@@ -40,7 +40,7 @@ The envelope and operation-specific payloads are runtime-validated from the same
 
 The lifecycle is `stopped → preparing → starting → running → stopping → stopped`, with `failed` as the terminal error state. A clean natural exit is `stopped`; preparation errors and nonzero exits are `failed`.
 
-An explicit stop sends SIGINT to the active process group, SIGTERM after 10 seconds, and SIGKILL after 15 seconds. Closing a TUI or attached CLI only disconnects that client. Stopping the supervisor leaves the worker and PrairieLearn running.
+An explicit instance stop sends SIGINT to the active process group, SIGTERM after 10 seconds, and SIGKILL after 15 seconds. Closing a TUI or attached CLI only disconnects that client. Stopping or force-killing only the supervisor leaves the worker and PrairieLearn running. The backend manager's clean-stop action stops every active instance, waits for its worker and process group to exit, shuts down the supervisor, and exits the manager so a different runner version can start without inheriting managed processes.
 
 Workers write state atomically and append sequenced lifecycle/stdout/stderr events. A restarted supervisor reconciles every current record from worker state files and control sockets. Missing worker state for a previously active run becomes a typed recovery failure for that profile without affecting others. A host restart never automatically relaunches profiles.
 
