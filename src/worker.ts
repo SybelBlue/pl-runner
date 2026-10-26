@@ -3,12 +3,13 @@ import net from "node:net";
 import { checkPreflightDependencies, missingDependencies } from "./deps.js";
 import { launchDocker } from "./docker.js";
 import { EventLog, eventLogger } from "./event-log.js";
-import { failure, requestSchema, success } from "./protocol.js";
+import { WORKER_PROTOCOL_VERSION, workerRequestSchema } from "./protocol.js";
 import { applyOfflineDefaults, launchRun, normalizeRunConfig, type LaunchControl } from "./run.js";
 import { eventLogFile, saveWorkerState } from "./store.js";
 import type { LaunchConfig, LifecycleState, WorkerState } from "./types.js";
 
 export type WorkerRequest = {
+  instanceId: string;
   runId: string;
   runDir: string;
   workerSocket: string;
@@ -116,7 +117,11 @@ export async function runWorker(requestPath: string): Promise<number> {
       } else {
         // Network state is always determined by the backend-side worker.
         applyOfflineDefaults(normalized, logger);
-        exitCode = await launchRun(normalized, logger, false, control);
+        exitCode = await launchRun(normalized, logger, false, control, {
+          instanceId: request.instanceId,
+          runDir: request.runDir,
+          env: process.env,
+        });
       }
     } else {
       exitCode = await launchDocker(request.config, logger, control);
@@ -174,17 +179,17 @@ async function createWorkerServer(
         newline = buffer.indexOf("\n");
         if (!line) continue;
         try {
-          const request = requestSchema.parse(JSON.parse(line));
+          const request = workerRequestSchema.parse(JSON.parse(line));
           if (request.type === "worker.status") {
-            socket.write(`${JSON.stringify(success(request.id, getState()))}\n`);
+            socket.write(`${JSON.stringify(workerSuccess(request.id, getState()))}\n`);
           } else if (request.type === "worker.stop") {
             stop();
-            socket.write(`${JSON.stringify(success(request.id, { accepted: true }))}\n`);
+            socket.write(`${JSON.stringify(workerSuccess(request.id, { accepted: true }))}\n`);
           } else {
-            socket.write(`${JSON.stringify(failure(request.id, "NOT_FOUND", `unknown worker request: ${request.type}`))}\n`);
+            socket.write(`${JSON.stringify(workerFailure(request.id, "NOT_FOUND", `unknown worker request: ${request.type}`))}\n`);
           }
         } catch (error) {
-          socket.write(`${JSON.stringify(failure("invalid", "PROTOCOL_MISMATCH", error instanceof Error ? error.message : String(error)))}\n`);
+          socket.write(`${JSON.stringify(workerFailure("invalid", "PROTOCOL_MISMATCH", error instanceof Error ? error.message : String(error)))}\n`);
         }
       }
     });
@@ -203,4 +208,12 @@ async function createWorkerServer(
 async function closeServer(server: net.Server, socketPath: string): Promise<void> {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await fs.rm(socketPath, { force: true });
+}
+
+function workerSuccess(id: string, result: unknown): unknown {
+  return { protocol: WORKER_PROTOCOL_VERSION, id, ok: true, result };
+}
+
+function workerFailure(id: string, code: string, message: string): unknown {
+  return { protocol: WORKER_PROTOCOL_VERSION, id, ok: false, error: { code, message } };
 }

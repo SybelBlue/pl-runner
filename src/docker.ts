@@ -27,7 +27,7 @@ export function normalizeDockerOptions(options: Partial<Omit<DockerOptions, "ima
   return {
     course_path: resolvePath(options.course_path ?? "."),
     image: requireDockerImageTag(options.image),
-    port: options.port ?? "3000:3000",
+    port: options.port ?? 3000,
     tmp_dir: resolvePath(options.tmp_dir ?? systemTmpDir()),
     local_only: options.local_only ?? false,
     quiet: options.quiet ?? false,
@@ -119,7 +119,7 @@ export function dockerRunArgs(options: DockerOptions, jobsDir: string): string[]
     "--rm",
     `--pull=${options.local_only ? "never" : "always"}`,
     "-p",
-    options.port,
+    `${options.port}:3000`,
     "-v",
     `${resolvePath(options.course_path)}:/course`,
     "-v",

@@ -8,6 +8,7 @@ export type RuntimePaths = {
   stateDir: string;
   runsDir: string;
   stateFile: string;
+  previousStateFile: string;
   backendSocket: string;
   backendLog: string;
 };
@@ -35,7 +36,8 @@ export function runtimePaths(env: NodeJS.ProcessEnv = process.env): RuntimePaths
   return {
     stateDir,
     runsDir: path.join(stateDir, "runs"),
-    stateFile: path.join(stateDir, "state-v2.json"),
+    stateFile: path.join(stateDir, "state-v3.json"),
+    previousStateFile: path.join(stateDir, "state-v2.json"),
     backendSocket: path.join(runtimeDir, "backend-v1.sock"),
     backendLog: path.join(stateDir, "backend.log"),
   };

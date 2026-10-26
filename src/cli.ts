@@ -9,18 +9,28 @@ import {
 import { DEFAULT_DOCKER_IMAGE_TAG, normalizeDockerImageTag } from "./docker.js";
 import { resolvePath, systemTmpDir } from "./path.js";
 import { RemoteError } from "./protocol.js";
-import type { DockerConfig, GitLaunchConfig, RunEvent, RunOptions, RunRecord, SupervisorStatus } from "./types.js";
+import type {
+  DockerConfig,
+  GitLaunchConfig,
+  InstanceStatus,
+  LifecycleState,
+  RunEvent,
+  RunOptions,
+  RunRecord,
+  SupervisorStatus,
+} from "./types.js";
 import { packageVersion } from "./version.js";
 
 type Command = "run" | "docker" | "start" | "status" | "stop" | "restart" | "logs" | "backend" | "help" | "version" | null;
 
 export type Parsed = {
   command: Command;
+  instance?: string;
   options: RunOptions;
   docker: {
     course_path?: string;
     image?: string;
-    port?: string;
+    port?: number;
     tmp_dir?: string;
     local_only?: boolean;
     quiet?: boolean;
@@ -55,43 +65,31 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         await launchTui();
         return 0;
       }
-      return printStatus(parsed.json);
+      return printStatus(parsed.json, parsed.instance);
     }
-    if (parsed.command === "status") return printStatus(parsed.json);
-    if (parsed.command === "start") return startAndMaybeAttach(undefined, parsed, false);
-    if (parsed.command === "run") {
-      const path = parsed.options.path ?? process.env.PRAIRIELEARN_PATH ?? "";
-      if (!path) throw new RemoteError("INVALID_CONFIG", "pass --path or set PRAIRIELEARN_PATH");
-      const config: GitLaunchConfig = {
-        mode: "git",
-        path: resolvePath(path),
-        branch: parsed.options.branch ?? null,
-        force_rebuild: parsed.options.force_rebuild,
-        local_only: parsed.options.local_only,
-        no_watch_upstream: parsed.options.no_watch_upstream,
-        quiet: false,
-      };
-      return startAndMaybeAttach(config, parsed, false);
-    }
-    if (parsed.command === "docker") {
-      const config: DockerConfig = {
-        mode: "docker",
-        course_path: resolvePath(parsed.docker.course_path ?? "."),
-        image: normalizeDockerImageTag(parsed.docker.image),
-        port: parsed.docker.port ?? "3000:3000",
-        tmp_dir: resolvePath(parsed.docker.tmp_dir ?? systemTmpDir()),
-        local_only: parsed.docker.local_only ?? false,
-        quiet: false,
-      };
-      return startAndMaybeAttach(config, parsed, false);
+    if (parsed.command === "status") return printStatus(parsed.json, parsed.instance);
+    if (parsed.command === "run") return configureGitAndStart(parsed);
+    if (parsed.command === "docker") return configureDockerAndStart(parsed);
+    if (parsed.command === "start") {
+      const status = await requestBackend<SupervisorStatus>("status.get");
+      const instance = resolveInstance(status, parsed.instance, startEligible, "start");
+      return startAndMaybeAttach(instance.id, parsed, false);
     }
     if (parsed.command === "stop") {
-      const record = await requestBackend<RunRecord | null>("instance.stop");
-      const status = record ? await waitForTerminal(record.runId) : await requestBackend<SupervisorStatus>("status.get");
-      printControlResult(status, parsed.json);
+      const before = await requestBackend<SupervisorStatus>("status.get");
+      const instance = resolveInstance(before, parsed.instance, (item) => Boolean(item.run && isActive(item.run.state)), "stop");
+      const record = await requestBackend<RunRecord | null>("instance.stop", { instanceId: instance.id });
+      const status = record
+        ? await waitForTerminal(instance.id, record.runId)
+        : await requestBackend<SupervisorStatus>("status.get");
+      printControlResult(status, parsed.json, instance.id);
       return 0;
     }
-    if (parsed.command === "restart") return startAndMaybeAttach(undefined, parsed, true);
+    if (parsed.command === "restart") {
+      const status = await requestBackend<SupervisorStatus>("status.get");
+      const instance = resolveInstance(status, parsed.instance, restartEligible, "restart");
+      return startAndMaybeAttach(instance.id, parsed, true);
+    }
     if (parsed.command === "logs") return printLogs(parsed);
     if (parsed.command === "backend") return backendCommand(parsed);
     return 0;
@@ -106,6 +104,7 @@ export function parseArgs(argv: string[]): Parsed {
     command: null,
     options: {
       branch: null,
+      isolated_database: false,
       force_rebuild: false,
       local_only: false,
       no_watch_upstream: false,
@@ -137,6 +136,7 @@ export function parseArgs(argv: string[]): Parsed {
     if (arg === "-q" || arg === "--quiet") parsed.options.quiet = true;
     else if (arg === "--json") parsed.json = true;
     else if (arg === "--detach") parsed.detach = true;
+    else if (arg === "--instance") parsed.instance = requireValue(arg, args);
     else if (arg === "-h" || arg === "--help" || arg === "-v" || arg === "--version") continue;
     else throw new Error(`unknown option: ${arg}`);
   }
@@ -146,6 +146,7 @@ export function parseArgs(argv: string[]): Parsed {
     if (arg === "-h" || arg === "--help" || arg === "-v" || arg === "--version") continue;
     if (arg === "--json") parsed.json = true;
     else if (arg === "--detach") parsed.detach = true;
+    else if (arg === "--instance") parsed.instance = requireValue(arg, args);
     else if (arg === "-q" || arg === "--quiet") {
       parsed.options.quiet = true;
       parsed.docker.quiet = true;
@@ -154,13 +155,15 @@ export function parseArgs(argv: string[]): Parsed {
       else if (arg === "-f" || arg === "--force-rebuild") parsed.options.force_rebuild = true;
       else if (arg === "-l" || arg === "--local-only") parsed.options.local_only = true;
       else if (arg === "-p" || arg === "--path") parsed.options.path = requireValue(arg, args);
+      else if (arg === "--port") parsed.options.port = requirePort(arg, args);
+      else if (arg === "--isolated-database") parsed.options.isolated_database = true;
       else if (arg === "-w" || arg === "--no-watch-upstream") parsed.options.no_watch_upstream = true;
       else if (arg === "--allow-pull-failure") parsed.allowPullFailure = true;
       else throw new Error(`unknown run option: ${arg}`);
     } else if (parsed.command === "docker") {
       if (arg === "-l" || arg === "--local-only") parsed.docker.local_only = true;
       else if (arg === "--image") parsed.docker.image = requireValue(arg, args);
-      else if (arg === "--port") parsed.docker.port = requireValue(arg, args);
+      else if (arg === "--port") parsed.docker.port = requirePort(arg, args);
       else if (arg === "--tmp-dir") parsed.docker.tmp_dir = requireValue(arg, args);
       else if (arg === "--start-docker") parsed.startDockerDaemon = true;
       else if (!arg.startsWith("-") && parsed.docker.course_path === undefined) parsed.docker.course_path = arg;
@@ -177,6 +180,8 @@ export function parseArgs(argv: string[]): Parsed {
       if (arg === "--allow-pull-failure") parsed.allowPullFailure = true;
       else if (arg === "--start-docker") parsed.startDockerDaemon = true;
       else throw new Error(`unknown ${parsed.command} option: ${arg}`);
+    } else if (parsed.command === "status" || parsed.command === "stop") {
+      throw new Error(`unknown ${parsed.command} option: ${arg}`);
     } else {
       throw new Error(`unknown option: ${arg}`);
     }
@@ -185,33 +190,96 @@ export function parseArgs(argv: string[]): Parsed {
   return parsed;
 }
 
-async function startAndMaybeAttach(
-  config: GitLaunchConfig | DockerConfig | undefined,
-  parsed: Parsed,
-  restart: boolean,
-): Promise<number> {
-  const payload = {
-    ...(config ? { config } : {}),
-    allowPullFailure: parsed.allowPullFailure,
-    startDockerDaemon: parsed.startDockerDaemon,
+async function configureGitAndStart(parsed: Parsed): Promise<number> {
+  const path = parsed.options.path ?? process.env.PRAIRIELEARN_PATH ?? "";
+  if (!path) throw new RemoteError("INVALID_CONFIG", "pass --path or set PRAIRIELEARN_PATH");
+  const status = await requestBackend<SupervisorStatus>("status.get");
+  const target = resolveConfigTarget(status, parsed.instance);
+  const port = parsed.options.port ?? target.instance?.config.port ?? nextAvailablePort(status.instances);
+  const config: GitLaunchConfig = {
+    mode: "git",
+    path: resolvePath(path),
+    branch: parsed.options.branch ?? null,
+    port,
+    isolated_database: parsed.options.isolated_database,
+    force_rebuild: parsed.options.force_rebuild,
+    local_only: parsed.options.local_only,
+    no_watch_upstream: parsed.options.no_watch_upstream,
+    quiet: false,
   };
-  const record = await requestBackend<RunRecord>(restart ? "instance.restart" : "instance.start", payload);
-  if (parsed.detach) {
-    const status = await waitForStart(record.runId);
-    printControlResult(status, parsed.json);
-    return status.instance?.state === "running" ? 0 : (status.instance?.exitCode ?? 1);
-  }
-  return attachToRun(record.runId, parsed.json, parsed.options.quiet || parsed.docker.quiet === true);
+  const instance = await saveConfigTarget(target, config);
+  return startAndMaybeAttach(instance.id, parsed, false);
 }
 
-async function attachToRun(runId: string, json: boolean, quiet: boolean): Promise<number> {
-  const initial = await requestBackend<RunEvent[]>("logs.tail", { limit: 200, afterSeq: 0, stream: "all" });
+async function configureDockerAndStart(parsed: Parsed): Promise<number> {
+  const status = await requestBackend<SupervisorStatus>("status.get");
+  const target = resolveConfigTarget(status, parsed.instance);
+  const port = parsed.docker.port ?? target.instance?.config.port ?? nextAvailablePort(status.instances);
+  const config: DockerConfig = {
+    mode: "docker",
+    course_path: resolvePath(parsed.docker.course_path ?? "."),
+    image: normalizeDockerImageTag(parsed.docker.image),
+    port,
+    tmp_dir: resolvePath(parsed.docker.tmp_dir ?? systemTmpDir()),
+    local_only: parsed.docker.local_only ?? false,
+    quiet: false,
+  };
+  const instance = await saveConfigTarget(target, config);
+  return startAndMaybeAttach(instance.id, parsed, false);
+}
+
+type ConfigTarget = { instance: InstanceStatus | null; name: string };
+
+function resolveConfigTarget(status: SupervisorStatus, selector: string | undefined): ConfigTarget {
+  if (selector) {
+    const instance = findByName(status.instances, selector);
+    return { instance: instance ?? null, name: instance?.name ?? selector.trim() };
+  }
+  if (status.instances.length === 0) return { instance: null, name: "default" };
+  if (status.instances.length === 1) return { instance: status.instances[0]!, name: status.instances[0]!.name };
+  throw ambiguityError("configure", status.instances);
+}
+
+async function saveConfigTarget(target: ConfigTarget, config: GitLaunchConfig | DockerConfig): Promise<InstanceStatus> {
+  if (target.instance) {
+    return requestBackend<InstanceStatus>("instance.update", {
+      instanceId: target.instance.id,
+      name: target.name,
+      config,
+    });
+  }
+  return requestBackend<InstanceStatus>("instance.create", { name: target.name, config });
+}
+
+async function startAndMaybeAttach(instanceId: string, parsed: Parsed, restart: boolean): Promise<number> {
+  const record = await requestBackend<RunRecord>(restart ? "instance.restart" : "instance.start", {
+    instanceId,
+    allowPullFailure: parsed.allowPullFailure,
+    startDockerDaemon: parsed.startDockerDaemon,
+  });
+  if (parsed.detach) {
+    const status = await waitForStart(instanceId, record.runId);
+    printControlResult(status, parsed.json, instanceId);
+    const run = status.instances.find((instance) => instance.id === instanceId)?.run;
+    return run?.state === "running" ? 0 : (run?.exitCode ?? 1);
+  }
+  return attachToRun(instanceId, record.runId, parsed.json, parsed.options.quiet || parsed.docker.quiet === true);
+}
+
+async function attachToRun(instanceId: string, runId: string, json: boolean, quiet: boolean): Promise<number> {
+  const initial = await requestBackend<RunEvent[]>("logs.tail", {
+    instanceId,
+    runId,
+    limit: 200,
+    afterSeq: 0,
+    stream: "all",
+  });
   let lastSeq = 0;
   for (const event of initial) {
     lastSeq = Math.max(lastSeq, event.seq);
     if (!quiet) printEvent(event, json);
   }
-  const subscription = await subscribeLogs(lastSeq, "all", (event) => {
+  const subscription = await subscribeLogs(instanceId, runId, lastSeq, "all", (event) => {
     lastSeq = Math.max(lastSeq, event.seq);
     if (!quiet) printEvent(event, json);
   });
@@ -224,10 +292,10 @@ async function attachToRun(runId: string, json: boolean, quiet: boolean): Promis
   try {
     while (!interrupted) {
       const status = await requestBackend<SupervisorStatus>("status.get");
-      const instance = status.instance;
-      if (!instance || instance.runId !== runId || instance.state === "stopped" || instance.state === "failed") {
+      const run = status.instances.find((instance) => instance.id === instanceId)?.run;
+      if (!run || run.runId !== runId || run.state === "stopped" || run.state === "failed") {
         subscription.close();
-        return instance?.exitCode ?? 0;
+        return run?.exitCode ?? 0;
       }
       await delay(250);
     }
@@ -237,14 +305,20 @@ async function attachToRun(runId: string, json: boolean, quiet: boolean): Promis
   }
 }
 
-async function printStatus(json: boolean): Promise<number> {
+async function printStatus(json: boolean, selector?: string): Promise<number> {
   const status = await requestBackend<SupervisorStatus>("status.get");
-  printControlResult(status, json);
+  const instance = selector ? resolveInstance(status, selector, () => true, "show status for") : undefined;
+  printControlResult(status, json, instance?.id);
   return 0;
 }
 
 async function printLogs(parsed: Parsed): Promise<number> {
+  const status = await requestBackend<SupervisorStatus>("status.get");
+  const instance = resolveInstance(status, parsed.instance, (item) => Boolean(item.run), "show logs for");
+  const run = instance.run!;
   const events = await requestBackend<RunEvent[]>("logs.tail", {
+    instanceId: instance.id,
+    runId: run.runId,
     limit: parsed.tail,
     afterSeq: 0,
     stream: parsed.stream,
@@ -254,8 +328,8 @@ async function printLogs(parsed: Parsed): Promise<number> {
     lastSeq = Math.max(lastSeq, event.seq);
     printEvent(event, parsed.json);
   }
-  if (!parsed.follow) return 0;
-  const subscription = await subscribeLogs(lastSeq, parsed.stream, (event) => printEvent(event, parsed.json));
+  if (!parsed.follow || run.state === "stopped" || run.state === "failed") return 0;
+  const subscription = await subscribeLogs(instance.id, run.runId, lastSeq, parsed.stream, (event) => printEvent(event, parsed.json));
   let interrupted = false;
   const onSigint = () => {
     interrupted = true;
@@ -263,19 +337,26 @@ async function printLogs(parsed: Parsed): Promise<number> {
   };
   process.once("SIGINT", onSigint);
   try {
-    await subscription.done;
+    while (!interrupted) {
+      const current = await requestBackend<SupervisorStatus>("status.get");
+      const currentRun = current.instances.find((item) => item.id === instance.id)?.run;
+      if (!currentRun || currentRun.runId !== run.runId || currentRun.state === "stopped" || currentRun.state === "failed") {
+        subscription.close();
+        return 0;
+      }
+      await delay(250);
+    }
   } finally {
     process.off("SIGINT", onSigint);
   }
-  return interrupted ? 130 : 0;
+  return 130;
 }
 
 async function backendCommand(parsed: Parsed): Promise<number> {
   const running = await backendIsRunning();
   if (parsed.backendAction === "status") {
     if (!running) {
-      const result = { running: false };
-      console.log(parsed.json ? JSON.stringify(result) : "backend: stopped");
+      console.log(parsed.json ? JSON.stringify({ running: false }) : "backend: stopped");
       return 0;
     }
     const status = await requestBackend<SupervisorStatus>("backend.status", {}, { autoStart: false });
@@ -287,25 +368,75 @@ async function backendCommand(parsed: Parsed): Promise<number> {
     return 0;
   }
   const result = await requestBackend("backend.shutdown", {}, { autoStart: false });
-  console.log(parsed.json ? JSON.stringify(result) : "backend: stopped (managed instance preserved)");
+  console.log(parsed.json ? JSON.stringify(result) : "backend: stopped (managed instances preserved)");
   return 0;
 }
 
-function printControlResult(status: SupervisorStatus, json: boolean): void {
+function resolveInstance(
+  status: SupervisorStatus,
+  selector: string | undefined,
+  eligible: (instance: InstanceStatus) => boolean,
+  action: string,
+): InstanceStatus {
+  if (selector) {
+    const instance = findByName(status.instances, selector);
+    if (!instance) throw new RemoteError("INSTANCE_NOT_FOUND", `instance not found: ${selector}`);
+    return instance;
+  }
+  const candidates = status.instances.filter(eligible);
+  if (candidates.length === 1) return candidates[0]!;
+  if (candidates.length === 0) throw new RemoteError("NOT_RUNNING", `no instance is eligible to ${action}`);
+  throw ambiguityError(action, candidates);
+}
+
+function ambiguityError(action: string, instances: InstanceStatus[]): RemoteError {
+  return new RemoteError(
+    "INVALID_CONFIG",
+    `multiple instances can ${action}; pass --instance <name> (${instances.map((instance) => instance.name).join(", ")})`,
+  );
+}
+
+function findByName(instances: InstanceStatus[], name: string): InstanceStatus | undefined {
+  const normalized = name.trim().toLocaleLowerCase();
+  return instances.find((instance) => instance.name.toLocaleLowerCase() === normalized);
+}
+
+function startEligible(instance: InstanceStatus): boolean {
+  return !instance.run || !isActive(instance.run.state);
+}
+
+function restartEligible(instance: InstanceStatus): boolean {
+  return Boolean(instance.run && (isActive(instance.run.state) || instance.run.state === "failed"));
+}
+
+function isActive(state: LifecycleState): boolean {
+  return state === "preparing" || state === "starting" || state === "running" || state === "stopping";
+}
+
+function nextAvailablePort(instances: InstanceStatus[], start = 3000): number {
+  const used = new Set(instances.map((instance) => instance.config.port));
+  for (let port = start; port <= 65_535; port += 1) if (!used.has(port)) return port;
+  throw new RemoteError("INVALID_CONFIG", "no available TCP port remains");
+}
+
+function printControlResult(status: SupervisorStatus, json: boolean, instanceId?: string): void {
+  const instances = instanceId ? status.instances.filter((instance) => instance.id === instanceId) : status.instances;
   if (json) {
-    console.log(JSON.stringify(status));
+    console.log(JSON.stringify(instanceId ? { ...status, instances } : status));
     return;
   }
-  const instance = status.instance;
   console.log(`backend: running (pid ${status.backend.pid})`);
-  if (!instance) {
-    console.log("instance: stopped");
-  } else {
+  if (instances.length === 0) {
+    console.log("instances: none configured");
+    return;
+  }
+  for (const instance of instances) {
     const mode = instance.config.mode;
     const target = mode === "git" ? instance.config.path : instance.config.course_path;
-    console.log(`instance: ${instance.state} (${mode}, ${target})`);
-    if (instance.exitCode !== null) console.log(`exit: ${instance.exitCode}`);
-    if (instance.errorMessage) console.log(`error: ${instance.errorMessage}`);
+    const run = instance.run;
+    console.log(`instance ${instance.name}: ${run?.state ?? "stopped"} (${mode}, ${target}, localhost:${instance.config.port})`);
+    if (run?.exitCode !== null && run?.exitCode !== undefined) console.log(`  exit: ${run.exitCode}`);
+    if (run?.errorMessage) console.log(`  error: ${run.errorMessage}`);
   }
 }
 
@@ -333,6 +464,12 @@ function requirePositiveInteger(option: string, args: string[]): number {
   return value;
 }
 
+function requirePort(option: string, args: string[]): number {
+  const port = requirePositiveInteger(option, args);
+  if (port > 65_535) throw new Error(`${option} requires an integer from 1 to 65535`);
+  return port;
+}
+
 function requireStream(value: string): "all" | "stdout" | "stderr" {
   if (value === "all" || value === "stdout" || value === "stderr") return value;
   throw new Error("--stream must be all, stdout, or stderr");
@@ -350,13 +487,13 @@ function printHelp(): void {
   console.log(`Usage: pl [command] [options]
 
 Commands:
-  start       Start the saved configuration
-  run         Start a Git checkout configuration
-  docker      Start a Docker configuration
+  start       Start a configured instance
+  run         Create or update and start a Git instance
+  docker      Create or update and start a Docker instance
   status      Show backend and instance status
-  stop        Stop the managed instance
-  restart     Restart the active or failed instance
-  logs        Print or follow lifecycle logs
+  stop        Stop an instance
+  restart     Restart an active or failed instance
+  logs        Print or follow an instance's lifecycle logs
   backend     Show or stop the supervisor (status|stop)
   help        Show this help message
   version     Show the installed version
@@ -364,6 +501,7 @@ Commands:
 Bare pl opens the TUI in a terminal and prints status otherwise.
 
 Common options:
+  --instance <name>
   --json
   --detach
   -q, --quiet
@@ -373,13 +511,15 @@ Run options:
   -f, --force-rebuild
   -l, --local-only
   -p, --path <path>
+  --port <host-port>
+  --isolated-database
   -w, --no-watch-upstream
   --allow-pull-failure
 
 Docker options:
   -l, --local-only
   --image <${DEFAULT_DOCKER_IMAGE_TAG}|latest>
-  --port <host:container>
+  --port <host-port>
   --tmp-dir <path>
   --start-docker
 

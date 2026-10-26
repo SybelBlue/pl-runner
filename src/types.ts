@@ -3,6 +3,8 @@ export type DockerImageTag = "us-prod-live" | "latest";
 export type RunOptions = {
   path?: string;
   branch?: string | null;
+  port?: number;
+  isolated_database: boolean;
   force_rebuild: boolean;
   local_only: boolean;
   no_watch_upstream: boolean;
@@ -13,16 +15,20 @@ export type RunOptions = {
 export type DockerOptions = {
   course_path: string;
   image: DockerImageTag;
-  port: string;
+  port: number;
   tmp_dir: string;
   local_only: boolean;
   quiet: boolean;
 };
 
-export type GitConfig = RunOptions & {
+export type GitConfig = Omit<
+  RunOptions,
+  "path" | "port" | "internet_available"
+> & {
   mode: "git";
   path: string;
   branch: string | null;
+  port: number;
   internet_available: boolean;
 };
 
@@ -81,17 +87,31 @@ export type WorkerState = {
 };
 
 export type RunRecord = WorkerState & {
+  instanceId: string;
   config: LaunchConfig;
   runDir: string;
   workerSocket: string;
 };
 
-export type SupervisorState = {
-  schemaVersion: 2;
-  savedConfig: LaunchConfig | null;
+export type InstanceRecord = {
+  id: string;
+  name: string;
+  config: LaunchConfig;
   currentRun: RunRecord | null;
   history: string[];
+};
+
+export type SupervisorState = {
+  schemaVersion: 3;
+  instances: InstanceRecord[];
   migratedLegacyConfig: boolean;
+};
+
+export type InstanceStatus = {
+  id: string;
+  name: string;
+  config: LaunchConfig;
+  run: RunRecord | null;
 };
 
 export type SupervisorStatus = {
@@ -101,6 +121,5 @@ export type SupervisorStatus = {
     protocolVersion: number;
     packageVersion: string;
   };
-  instance: RunRecord | null;
-  savedConfig: LaunchConfig | null;
+  instances: InstanceStatus[];
 };

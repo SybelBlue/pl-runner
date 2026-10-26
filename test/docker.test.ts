@@ -12,7 +12,7 @@ test("assembles docker run arguments", () => {
   assert.deepEqual(dockerRunArgs({
     course_path: "/course",
     image: "latest",
-    port: "3000:3000",
+    port: 3000,
     tmp_dir: "/tmp",
     local_only: false,
     quiet: false,

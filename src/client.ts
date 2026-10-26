@@ -12,19 +12,25 @@ export type RequestOptions = {
   timeoutMs?: number;
 };
 
+let compatibilityCheck: Promise<void> | null = null;
+let recoveryCheck: Promise<void> | null = null;
+
 export async function requestBackend<T = unknown>(
   type: string,
   payload: unknown = {},
   options: RequestOptions = {},
 ): Promise<T> {
   const autoStart = options.autoStart !== false;
+  await ensureCompatibleBackend(autoStart, options.timeoutMs ?? 5_000);
   let socket = await connectBackend();
   if (!socket && autoStart) {
-    await startBackend();
-    socket = await waitForBackend(options.timeoutMs ?? 5_000);
+    await recoverCompatibleBackend(options.timeoutMs ?? 5_000);
+    socket = await connectBackend();
   }
   if (!socket) throw new RemoteError("NOT_RUNNING", "pl-runner backend is not running");
-  return sendRequest<T>(socket, type, payload, options.timeoutMs ?? 30_000);
+  const result = await sendRequest<T>(socket, type, payload, options.timeoutMs ?? 30_000);
+  if (type === "backend.shutdown") compatibilityCheck = null;
+  return result;
 }
 
 export async function backendIsRunning(): Promise<boolean> {
@@ -61,43 +67,47 @@ async function waitForBackend(timeoutMs = 5_000): Promise<net.Socket> {
   throw new RemoteError("NOT_RUNNING", "timed out waiting for pl-runner backend to start");
 }
 
-export async function waitForStart(runId: string, timeoutMs = 30 * 60_000): Promise<SupervisorStatus> {
+export async function waitForStart(instanceId: string, runId: string, timeoutMs = 30 * 60_000): Promise<SupervisorStatus> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const status = await requestBackend<SupervisorStatus>("status.get");
-    const instance = status.instance;
-    if (!instance || instance.runId !== runId) {
+    const instance = status.instances.find((candidate) => candidate.id === instanceId);
+    if (!instance?.run || instance.run.runId !== runId) {
       throw new RemoteError("WORKER_RECOVERY_FAILED", "the requested run is no longer current");
     }
-    if (instance.state === "running" || instance.state === "failed" || instance.state === "stopped") return status;
+    if (instance.run.state === "running" || instance.run.state === "failed" || instance.run.state === "stopped") return status;
     await delay(100);
   }
   throw new RemoteError("INTERNAL_ERROR", "timed out waiting for the managed instance to start");
 }
 
-export async function waitForTerminal(runId: string, timeoutMs = 20_000): Promise<SupervisorStatus> {
+export async function waitForTerminal(instanceId: string, runId: string, timeoutMs = 20_000): Promise<SupervisorStatus> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const status = await requestBackend<SupervisorStatus>("status.get");
-    const instance = status.instance;
-    if (!instance || instance.runId !== runId || instance.state === "stopped" || instance.state === "failed") return status;
+    const instance = status.instances.find((candidate) => candidate.id === instanceId);
+    if (!instance?.run || instance.run.runId !== runId || instance.run.state === "stopped" || instance.run.state === "failed") return status;
     await delay(100);
   }
   return requestBackend<SupervisorStatus>("status.get");
 }
 
 export async function subscribeLogs(
+  instanceId: string,
+  runId: string,
   afterSeq: number,
   stream: "all" | "stdout" | "stderr",
   onEvent: (event: RunEvent) => void,
 ): Promise<{ close: () => void; done: Promise<void> }> {
+  await ensureCompatibleBackend(true, 5_000);
   let socket = await connectBackend();
   if (!socket) {
-    await startBackend();
-    socket = await waitForBackend();
+    await recoverCompatibleBackend(5_000);
+    socket = await connectBackend();
   }
+  if (!socket) throw new RemoteError("NOT_RUNNING", "pl-runner backend is not running");
   const id = randomUUID();
-  const request = { protocol: PROTOCOL_VERSION, id, type: "logs.subscribe", payload: { afterSeq, stream } };
+  const request = { protocol: PROTOCOL_VERSION, id, type: "logs.subscribe", payload: { instanceId, runId, afterSeq, stream } };
   let buffer = "";
   let acknowledged = false;
   let resolveDone!: () => void;
@@ -129,6 +139,106 @@ export async function subscribeLogs(
   socket.on("close", () => resolveDone());
   socket.write(`${JSON.stringify(request)}\n`);
   return { close: () => socket.destroy(), done };
+}
+
+async function ensureCompatibleBackend(autoStart: boolean, timeoutMs: number): Promise<void> {
+  if (!compatibilityCheck) {
+    compatibilityCheck = checkCompatibility(autoStart, timeoutMs).catch((error) => {
+      compatibilityCheck = null;
+      throw error;
+    });
+  }
+  await compatibilityCheck;
+}
+
+async function recoverCompatibleBackend(timeoutMs: number): Promise<void> {
+  if (!recoveryCheck) {
+    compatibilityCheck = null;
+    const recovery = ensureCompatibleBackend(true, timeoutMs).finally(() => {
+      if (recoveryCheck === recovery) recoveryCheck = null;
+    });
+    recoveryCheck = recovery;
+  }
+  await recoveryCheck;
+}
+
+async function checkCompatibility(autoStart: boolean, timeoutMs: number): Promise<void> {
+  const socket = await connectBackend();
+  if (!socket) {
+    if (!autoStart) throw new RemoteError("NOT_RUNNING", "pl-runner backend is not running");
+    await startBackend();
+    const started = await waitForBackend(timeoutMs);
+    started.end();
+    return;
+  }
+  const version = await probeProtocol(socket);
+  if (version === PROTOCOL_VERSION) return;
+  if (version !== 1) throw new RemoteError("PROTOCOL_MISMATCH", `unsupported backend protocol: ${version}`);
+
+  // Protocol v1 supervisors preserve their worker when shut down. Hand the
+  // stable socket over to the new supervisor, which will migrate and recover it.
+  const legacy = await connectBackend();
+  if (!legacy) throw new RemoteError("PROTOCOL_MISMATCH", "legacy backend disappeared during upgrade");
+  await sendLegacyShutdown(legacy);
+  await waitForBackendStop(timeoutMs);
+  await startBackend();
+  const started = await waitForBackend(timeoutMs);
+  started.end();
+}
+
+function probeProtocol(socket: net.Socket): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const id = randomUUID();
+    let buffer = "";
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new RemoteError("PROTOCOL_MISMATCH", "backend protocol probe timed out"));
+    }, 1_000);
+    socket.setEncoding("utf8");
+    socket.once("error", reject);
+    socket.on("data", (chunk: string) => {
+      buffer += chunk;
+      const newline = buffer.indexOf("\n");
+      if (newline < 0) return;
+      clearTimeout(timeout);
+      const response = JSON.parse(buffer.slice(0, newline)) as { protocol?: unknown };
+      socket.end();
+      resolve(typeof response.protocol === "number" ? response.protocol : -1);
+    });
+    socket.write(`${JSON.stringify({ protocol: PROTOCOL_VERSION, id, type: "hello", payload: {} })}\n`);
+  });
+}
+
+function sendLegacyShutdown(socket: net.Socket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const id = randomUUID();
+    let buffer = "";
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new RemoteError("PROTOCOL_MISMATCH", "legacy backend shutdown timed out"));
+    }, 2_000);
+    socket.setEncoding("utf8");
+    socket.once("error", reject);
+    socket.on("data", (chunk: string) => {
+      buffer += chunk;
+      if (!buffer.includes("\n")) return;
+      clearTimeout(timeout);
+      socket.end();
+      resolve();
+    });
+    socket.write(`${JSON.stringify({ protocol: 1, id, type: "backend.shutdown", payload: {} })}\n`);
+  });
+}
+
+async function waitForBackendStop(timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const socket = await connectBackend();
+    if (!socket) return;
+    socket.end();
+    await delay(50);
+  }
+  throw new RemoteError("PROTOCOL_MISMATCH", "timed out waiting for legacy backend to stop");
 }
 
 async function connectBackend(): Promise<net.Socket | null> {

@@ -1,12 +1,18 @@
 import { z } from "zod";
 import type { LaunchConfig, RunEvent, SupervisorStatus } from "./types.js";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
+export const WORKER_PROTOCOL_VERSION = 1;
+
+export const instanceNameSchema = z.string().trim().min(1).max(64);
+const portSchema = z.number().int().min(1).max(65_535);
 
 const gitConfigSchema = z.object({
   mode: z.literal("git"),
   path: z.string().min(1),
   branch: z.string().nullable(),
+  port: portSchema,
+  isolated_database: z.boolean(),
   force_rebuild: z.boolean(),
   local_only: z.boolean(),
   no_watch_upstream: z.boolean(),
@@ -17,7 +23,7 @@ const dockerConfigSchema = z.object({
   mode: z.literal("docker"),
   course_path: z.string().min(1),
   image: z.enum(["us-prod-live", "latest"]),
-  port: z.string().min(1),
+  port: portSchema,
   tmp_dir: z.string().min(1),
   local_only: z.boolean(),
   quiet: z.boolean(),
@@ -32,11 +38,22 @@ export const requestSchema = z.object({
   payload: z.unknown().optional(),
 });
 
+export const workerRequestSchema = z.object({
+  protocol: z.literal(WORKER_PROTOCOL_VERSION),
+  id: z.string().min(1),
+  type: z.string().min(1),
+  payload: z.unknown().optional(),
+});
+
 export type ProtocolRequest = z.infer<typeof requestSchema>;
 
 export type ProtocolErrorCode =
   | "INVALID_CONFIG"
   | "ACTIVE_INSTANCE_CONFLICT"
+  | "INSTANCE_NOT_FOUND"
+  | "INSTANCE_NAME_CONFLICT"
+  | "PORT_CONFLICT"
+  | "PORT_IN_USE"
   | "PULL_FAILED"
   | "MISSING_DEPENDENCY"
   | "DOCKER_DAEMON_UNAVAILABLE"
@@ -53,11 +70,11 @@ type ProtocolError = {
 };
 
 export type ProtocolResponse<T = unknown> =
-  | { protocol: 1; id: string; ok: true; result: T }
-  | { protocol: 1; id: string; ok: false; error: ProtocolError };
+  | { protocol: 2; id: string; ok: true; result: T }
+  | { protocol: 2; id: string; ok: false; error: ProtocolError };
 
 export type ProtocolEvent = {
-  protocol: 1;
+  protocol: 2;
   event: "log" | "status";
   data: RunEvent | SupervisorStatus;
 };

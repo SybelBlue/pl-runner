@@ -3,6 +3,7 @@ import { createBranchWorktree } from "./worktree.js";
 import { git, validateProjectPath } from "./git.js";
 import { resolvePath, withoutVirtualEnv } from "./path.js";
 import { runInteractiveProcess } from "./process.js";
+import { ensureIsolatedDatabase, writeEffectivePrairieLearnConfig } from "./prairielearn-config.js";
 import { startUpstreamWatch } from "./watch.js";
 import type { CommandResult, GitConfig, Logger, RunOptions } from "./types.js";
 
@@ -17,6 +18,12 @@ export type LaunchControl = {
   onFailure?: (code: string, message: string) => void;
 };
 
+export type LaunchRuntime = {
+  instanceId: string;
+  runDir: string;
+  env?: NodeJS.ProcessEnv;
+};
+
 export async function normalizeRunConfig(options: RunOptions, interactive: boolean, logger: Logger): Promise<GitConfig | null> {
   const rawPath = options.path ?? process.env.PRAIRIELEARN_PATH;
   if (!rawPath) {
@@ -28,6 +35,8 @@ export async function normalizeRunConfig(options: RunOptions, interactive: boole
     mode: "git",
     path: resolvePath(rawPath),
     branch: options.branch ?? null,
+    port: options.port ?? 3000,
+    isolated_database: options.isolated_database,
     force_rebuild: options.force_rebuild,
     local_only: options.local_only,
     no_watch_upstream: options.no_watch_upstream,
@@ -53,6 +62,7 @@ export async function launchRun(
   logger: Logger,
   _interactive = false,
   control: LaunchControl = {},
+  runtime?: LaunchRuntime,
 ): Promise<number> {
   control.onState?.("preparing");
   if (!(await validateProjectPath(config.path, logger))) {
@@ -94,6 +104,44 @@ export async function launchRun(
 
     if (control.shouldStop?.()) return 130;
 
+    let launchEnv = withoutVirtualEnv(runtime?.env);
+    if (runtime) {
+      const effective = await writeEffectivePrairieLearnConfig({
+        launchPath,
+        runDir: runtime.runDir,
+        instanceId: runtime.instanceId,
+        port: config.port,
+        isolatedDatabase: config.isolated_database,
+        env: runtime.env,
+      });
+      launchEnv = { ...launchEnv, PL_CONFIG_PATH: effective.path };
+      if (effective.databaseName) {
+        logger.info("starting PrairieLearn support services for isolated database setup...");
+        const supportStatus = await runInteractiveProcess("make", ["-C", launchPath, "start-support"], {
+          quiet: config.quiet,
+          env: launchEnv,
+          handleSignals: false,
+          onSpawn: control.onSpawn,
+          onExitRequest: control.onProcess,
+          onOutput: (source, chunk) => control.onOutput?.(source, chunk, "database"),
+        });
+        if (supportStatus !== 0) {
+          const message = `PrairieLearn support services exited with ${supportStatus}`;
+          control.onFailure?.("DATABASE_PREPARATION_FAILED", message);
+          logger.error(message);
+          return supportStatus;
+        }
+        try {
+          await ensureIsolatedDatabase(effective.databaseName, logger);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          control.onFailure?.("DATABASE_PREPARATION_FAILED", message);
+          logger.error(message);
+          return 1;
+        }
+      }
+    }
+
     let rebuild = config.force_rebuild || (branchWorktree && config.internet_available);
     while (true) {
       if (rebuild) {
@@ -115,7 +163,7 @@ export async function launchRun(
       control.onState?.("starting");
       const status = await runInteractiveProcess("make", ["-C", launchPath, "dev"], {
         quiet: config.quiet,
-        env: { ...withoutVirtualEnv(), FORCE_COLOR: "1" },
+        env: { ...launchEnv, FORCE_COLOR: "1" },
         handleSignals: false,
         onSpawn: (pid) => {
           control.onSpawn?.(pid);

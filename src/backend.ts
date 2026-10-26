@@ -1,7 +1,7 @@
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
-import { spawn } from "node:child_process";
 import { checkPreflightDependencies } from "./deps.js";
 import { dockerImageInfo, startDockerDaemon } from "./docker.js";
 import { nodeEntrypoint } from "./entrypoint.js";
@@ -12,7 +12,9 @@ import { createLogger } from "./logger.js";
 import { ensurePrivateDirectory, ensureRuntimePaths, runDirectory, workerSocketPath } from "./paths.js";
 import {
   PROTOCOL_VERSION,
+  WORKER_PROTOCOL_VERSION,
   failure,
+  instanceNameSchema,
   parseLaunchConfig,
   requestSchema,
   success,
@@ -20,6 +22,7 @@ import {
   type ProtocolRequest,
 } from "./protocol.js";
 import {
+  deleteInstanceRuns,
   eventLogFile,
   loadSupervisorState,
   loadWorkerState,
@@ -28,6 +31,8 @@ import {
   workerRequestFile,
 } from "./store.js";
 import type {
+  InstanceRecord,
+  InstanceStatus,
   LaunchConfig,
   LifecycleState,
   RunEvent,
@@ -63,42 +68,61 @@ export async function runBackend(env: NodeJS.ProcessEnv = process.env): Promise<
   const clients = new Set<net.Socket>();
 
   const refreshOnce = async (): Promise<void> => {
-    if (!state.currentRun) return;
-    const workerState = await loadWorkerState(state.currentRun.runDir);
-    if (workerState) {
-      if (ACTIVE_STATES.has(workerState.state)) {
-        try {
-          const liveState = await workerRequest(state.currentRun.workerSocket, "worker.status") as WorkerState;
-          Object.assign(workerState, liveState);
-        } catch {
-          const age = Date.now() - new Date(workerState.updatedAt).getTime();
-          if (age > 3_000) {
-            Object.assign(workerState, {
-              state: "failed",
+    const refreshed = await Promise.all(state.instances.map(async (instance) => {
+      const current = instance.currentRun;
+      if (!current) return { instanceId: instance.id, runId: null, run: null, changed: false };
+      const workerState = await loadWorkerState(current.runDir);
+      if (workerState) {
+        if (ACTIVE_STATES.has(workerState.state)) {
+          try {
+            const liveState = await workerRequest(current.workerSocket, "worker.status") as WorkerState;
+            Object.assign(workerState, liveState);
+          } catch {
+            const age = Date.now() - new Date(workerState.updatedAt).getTime();
+            if (age > 3_000) {
+              Object.assign(workerState, {
+                state: "failed",
+                updatedAt: new Date().toISOString(),
+                errorCode: "WORKER_RECOVERY_FAILED",
+                errorMessage: "the durable worker is no longer reachable",
+              } satisfies Partial<WorkerState>);
+            }
+          }
+        }
+        const nextRun = { ...current, ...workerState };
+        return {
+          instanceId: instance.id,
+          runId: current.runId,
+          run: nextRun,
+          changed: JSON.stringify(stripConfig(nextRun)) !== JSON.stringify(stripConfig(current)),
+        };
+      }
+      if (ACTIVE_STATES.has(current.state)) {
+        const age = Date.now() - new Date(current.updatedAt).getTime();
+        if (age > 3_000) {
+          return {
+            instanceId: instance.id,
+            runId: current.runId,
+            run: {
+              ...current,
+              state: "failed" as const,
               updatedAt: new Date().toISOString(),
               errorCode: "WORKER_RECOVERY_FAILED",
               errorMessage: "the durable worker is no longer reachable",
-            } satisfies Partial<WorkerState>);
-          }
+            },
+            changed: true,
+          };
         }
       }
-      const previous = JSON.stringify(stripConfig(state.currentRun));
-      state.currentRun = { ...state.currentRun, ...workerState };
-      if (JSON.stringify(stripConfig(state.currentRun)) !== previous) await saveSupervisorState(state, env);
-      return;
-    }
-    if (ACTIVE_STATES.has(state.currentRun.state)) {
-      const age = Date.now() - new Date(state.currentRun.updatedAt).getTime();
-      if (age > 3_000) {
-        state.currentRun = {
-          ...state.currentRun,
-          state: "failed",
-          updatedAt: new Date().toISOString(),
-          errorCode: "WORKER_RECOVERY_FAILED",
-          errorMessage: "the durable worker is no longer reachable",
-        };
-        await saveSupervisorState(state, env);
+      return { instanceId: instance.id, runId: current.runId, run: current, changed: false };
+    }));
+    if (refreshed.some((item) => item.changed)) {
+      for (const item of refreshed) {
+        if (!item.changed || !item.runId || !item.run) continue;
+        const currentInstance = state.instances.find((instance) => instance.id === item.instanceId);
+        if (currentInstance?.currentRun?.runId === item.runId) currentInstance.currentRun = item.run;
       }
+      await saveSupervisorState(state, env);
     }
   };
 
@@ -117,8 +141,7 @@ export async function runBackend(env: NodeJS.ProcessEnv = process.env): Promise<
         protocolVersion: PROTOCOL_VERSION,
         packageVersion: packageVersion(),
       },
-      instance: state.currentRun,
-      savedConfig: state.savedConfig,
+      instances: state.instances.map(instanceStatus),
     };
   };
 
@@ -128,33 +151,73 @@ export async function runBackend(env: NodeJS.ProcessEnv = process.env): Promise<
     return next;
   };
 
+  const createInstance = async (payload: unknown): Promise<InstanceStatus> => {
+    const input = asRecord(payload);
+    const name = parseInstanceName(input.name);
+    const config = parseConfig(input.config);
+    assertUniqueProfile(state, name, config);
+    const instance: InstanceRecord = {
+      id: randomUUID(),
+      name,
+      config,
+      currentRun: null,
+      history: [],
+    };
+    state.instances.push(instance);
+    await saveSupervisorState(state, env);
+    return instanceStatus(instance);
+  };
+
+  const updateInstance = async (payload: unknown): Promise<InstanceStatus> => {
+    const input = asRecord(payload);
+    await refresh();
+    const instance = requireInstance(state, input.instanceId);
+    if (instance.currentRun && ACTIVE_STATES.has(instance.currentRun.state)) {
+      throw new ActionError("ACTIVE_INSTANCE_CONFLICT", "an active instance cannot be configured");
+    }
+    const name = parseInstanceName(input.name);
+    const config = parseConfig(input.config);
+    assertUniqueProfile(state, name, config, instance.id);
+    instance.name = name;
+    instance.config = config;
+    await saveSupervisorState(state, env);
+    return instanceStatus(instance);
+  };
+
+  const deleteInstance = async (payload: unknown): Promise<{ deletedId: string }> => {
+    const input = asRecord(payload);
+    await refresh();
+    const instance = requireInstance(state, input.instanceId);
+    if (instance.currentRun && ACTIVE_STATES.has(instance.currentRun.state)) {
+      throw new ActionError("ACTIVE_INSTANCE_CONFLICT", "stop the instance before deleting it");
+    }
+    state.instances = state.instances.filter((candidate) => candidate.id !== instance.id);
+    await saveSupervisorState(state, env);
+    await deleteInstanceRuns(instance, env);
+    return { deletedId: instance.id };
+  };
+
   const start = async (payload: unknown): Promise<RunRecord> => {
     const input = asRecord(payload);
-    const rawConfig = input.config ?? state.savedConfig;
-    if (!rawConfig) throw new ActionError("INVALID_CONFIG", "no saved configuration exists");
-    let config: LaunchConfig;
-    try {
-      config = parseLaunchConfig(rawConfig);
-    } catch (error) {
-      throw new ActionError("INVALID_CONFIG", error instanceof Error ? error.message : String(error));
-    }
     await refresh();
-    if (state.currentRun && ACTIVE_STATES.has(state.currentRun.state)) {
-      if (sameConfig(state.currentRun.config, config)) return state.currentRun;
-      throw new ActionError(
-        "ACTIVE_INSTANCE_CONFLICT",
-        "a different PrairieLearn configuration is already active",
-        { active: state.currentRun },
-      );
+    const instance = requireInstance(state, input.instanceId);
+    if (instance.currentRun && ACTIVE_STATES.has(instance.currentRun.state)) return instance.currentRun;
+    if (!(await portIsAvailable(instance.config.port))) {
+      throw new ActionError("PORT_IN_USE", `port ${instance.config.port} is already in use`, {
+        instanceId: instance.id,
+        port: instance.config.port,
+      });
     }
 
-    if (state.currentRun) state.history.push(state.currentRun.runId);
+    if (instance.currentRun) instance.history.push(instance.currentRun.runId);
     const runId = randomUUID();
     const runDir = runDirectory(runId, env);
     const workerSocket = workerSocketPath(runId, env);
     await ensurePrivateDirectory(runDir);
     const now = new Date().toISOString();
+    const config = { ...instance.config } as LaunchConfig;
     const workerRequest: WorkerRequest = {
+      instanceId: instance.id,
       runId,
       runDir,
       workerSocket,
@@ -164,6 +227,7 @@ export async function runBackend(env: NodeJS.ProcessEnv = process.env): Promise<
     };
     await fs.writeFile(workerRequestFile(runDir), `${JSON.stringify(workerRequest, null, 2)}\n`, { mode: 0o600 });
     const record: RunRecord = {
+      instanceId: instance.id,
       runId,
       runDir,
       workerSocket,
@@ -177,7 +241,7 @@ export async function runBackend(env: NodeJS.ProcessEnv = process.env): Promise<
       errorCode: null,
       errorMessage: null,
     };
-    state.currentRun = record;
+    instance.currentRun = record;
     await pruneRunHistory(state, env, 5);
     await saveSupervisorState(state, env);
 
@@ -190,35 +254,43 @@ export async function runBackend(env: NodeJS.ProcessEnv = process.env): Promise<
     child.unref();
     record.pid = child.pid ?? 0;
     record.updatedAt = new Date().toISOString();
-    state.currentRun = record;
+    instance.currentRun = record;
     await saveSupervisorState(state, env);
     return record;
   };
 
-  const stop = async (): Promise<RunRecord | null> => {
+  const stop = async (payload: unknown): Promise<RunRecord | null> => {
+    const input = asRecord(payload);
     await refresh();
-    if (!state.currentRun || !ACTIVE_STATES.has(state.currentRun.state)) return state.currentRun;
-    await workerRequest(state.currentRun.workerSocket, "worker.stop").catch((error) => {
+    const instance = requireInstance(state, input.instanceId);
+    const current = instance.currentRun;
+    if (!current || !ACTIVE_STATES.has(current.state)) return current;
+    await workerRequest(current.workerSocket, "worker.stop").catch((error) => {
       throw new ActionError("WORKER_RECOVERY_FAILED", error instanceof Error ? error.message : String(error));
     });
-    state.currentRun = { ...state.currentRun, state: "stopping", updatedAt: new Date().toISOString() };
+    instance.currentRun = { ...current, state: "stopping", updatedAt: new Date().toISOString() };
     await saveSupervisorState(state, env);
-    return state.currentRun;
+    return instance.currentRun;
   };
 
   const restart = async (payload: unknown): Promise<RunRecord> => {
+    const input = asRecord(payload);
     await refresh();
-    const current = state.currentRun;
+    const instance = requireInstance(state, input.instanceId);
+    const current = instance.currentRun;
     if (!current || current.state === "stopped") {
-      throw new ActionError("NOT_RUNNING", "no active or failed run exists; use `pl start`");
+      throw new ActionError("NOT_RUNNING", `instance ${instance.name} has no active or failed run; use \`pl start\``);
     }
-    const config = current.config;
     if (ACTIVE_STATES.has(current.state)) {
-      await stop();
+      await stop({ instanceId: instance.id });
       await waitForTerminal(current.runDir, 17_000);
       await refresh();
     }
-    return start({ ...asRecord(payload), config });
+    return start({
+      instanceId: instance.id,
+      allowPullFailure: input.allowPullFailure,
+      startDockerDaemon: input.startDockerDaemon,
+    });
   };
 
   const server = net.createServer((socket) => {
@@ -265,46 +337,43 @@ export async function runBackend(env: NodeJS.ProcessEnv = process.env): Promise<
         result = {
           protocolVersion: PROTOCOL_VERSION,
           packageVersion: packageVersion(),
-          capabilities: ["config", "discovery", "lifecycle", "logs", "docker-daemon", "recovery"],
+          capabilities: ["instances", "discovery", "lifecycle", "logs", "docker-daemon", "recovery"],
         };
       } else if (request.type === "status.get" || request.type === "backend.status") {
         result = await status();
-      } else if (request.type === "config.get") {
-        result = state.savedConfig;
-      } else if (request.type === "config.set") {
-        result = await mutate(async () => {
-          await refresh();
-          if (state.currentRun && ACTIVE_STATES.has(state.currentRun.state)) {
-            throw new ActionError("ACTIVE_INSTANCE_CONFLICT", "configuration cannot be edited while an instance is active");
-          }
-          try {
-            state.savedConfig = parseLaunchConfig(asRecord(request.payload).config);
-          } catch (error) {
-            throw new ActionError("INVALID_CONFIG", error instanceof Error ? error.message : String(error));
-          }
-          await saveSupervisorState(state, env);
-          return state.savedConfig;
-        });
+      } else if (request.type === "instance.get") {
+        await refresh();
+        result = instanceStatus(requireInstance(state, asRecord(request.payload).instanceId));
+      } else if (request.type === "instance.create") {
+        result = await mutate(() => createInstance(request.payload));
+      } else if (request.type === "instance.update") {
+        result = await mutate(() => updateInstance(request.payload));
+      } else if (request.type === "instance.delete") {
+        result = await mutate(() => deleteInstance(request.payload));
       } else if (request.type === "host.inspect") {
         result = await inspectHost(request.payload);
       } else if (request.type === "instance.start") {
         result = await mutate(() => start(request.payload));
       } else if (request.type === "instance.stop") {
-        result = await mutate(stop);
+        result = await mutate(() => stop(request.payload));
       } else if (request.type === "instance.restart") {
         result = await mutate(() => restart(request.payload));
       } else if (request.type === "logs.tail") {
-        result = await tailLogs(state, request.payload);
+        result = await tailLogs(state, request.payload, env);
       } else if (request.type === "logs.subscribe") {
         const payload = asRecord(request.payload);
+        const target = resolveRun(state, payload, env);
+        if (!target) throw new ActionError("NOT_FOUND", "the instance has no run to subscribe to");
         let afterSeq = numberValue(payload.afterSeq, 0);
-        socket.write(`${JSON.stringify(success(request.id, { subscribed: true }))}\n`);
-        const interval = setInterval(async () => {
-          const events = await tailLogs(state, { ...payload, afterSeq, limit: 1_000 });
-          for (const event of events) {
-            afterSeq = Math.max(afterSeq, event.seq);
-            socket.write(`${JSON.stringify({ protocol: PROTOCOL_VERSION, event: "log", data: event })}\n`);
-          }
+        socket.write(`${JSON.stringify(success(request.id, { subscribed: true, runId: target.runId }))}\n`);
+        const fixedPayload = { ...payload, runId: target.runId };
+        const interval = setInterval(() => {
+          void tailLogs(state, { ...fixedPayload, afterSeq, limit: 1_000 }, env).then((events) => {
+            for (const event of events) {
+              afterSeq = Math.max(afterSeq, event.seq);
+              socket.write(`${JSON.stringify({ protocol: PROTOCOL_VERSION, event: "log", data: event })}\n`);
+            }
+          }).catch(() => undefined);
         }, 250);
         intervals.add(interval);
         return;
@@ -312,7 +381,12 @@ export async function runBackend(env: NodeJS.ProcessEnv = process.env): Promise<
         const code = await startDockerDaemon(true, createLogger(true));
         result = { exitCode: code };
       } else if (request.type === "backend.shutdown") {
-        result = { accepted: true, activeInstancePreserved: Boolean(state.currentRun && ACTIVE_STATES.has(state.currentRun.state)) };
+        result = {
+          accepted: true,
+          activeInstancesPreserved: state.instances.filter((instance) => (
+            instance.currentRun && ACTIVE_STATES.has(instance.currentRun.state)
+          )).length,
+        };
         shuttingDown = true;
       } else {
         throw new ActionError("NOT_FOUND", `unknown request type: ${request.type}`);
@@ -349,11 +423,7 @@ async function inspectHost(payload: unknown): Promise<unknown> {
   const input = asRecord(payload);
   const [dependencies, internetAvailable] = await Promise.all([checkPreflightDependencies(), hasInternet()]);
   const images = input.mode === "docker" ? await dockerImageInfo(internetAvailable) : [];
-  const result: Record<string, unknown> = {
-    dependencies,
-    internetAvailable,
-    dockerImages: images,
-  };
+  const result: Record<string, unknown> = { dependencies, internetAvailable, dockerImages: images };
   if (typeof input.path === "string" && input.path) {
     const warnings: string[] = [];
     const logger = {
@@ -377,19 +447,43 @@ async function inspectHost(payload: unknown): Promise<unknown> {
   return result;
 }
 
-async function tailLogs(state: SupervisorState, payload: unknown): Promise<RunEvent[]> {
-  if (!state.currentRun) return [];
+async function tailLogs(
+  state: SupervisorState,
+  payload: unknown,
+  env: NodeJS.ProcessEnv,
+): Promise<RunEvent[]> {
   const input = asRecord(payload);
+  const target = resolveRun(state, input, env);
+  if (!target) return [];
   const limit = Math.min(1_000, Math.max(1, numberValue(input.limit, 200)));
   const afterSeq = numberValue(input.afterSeq, 0);
   const stream = typeof input.stream === "string" ? input.stream : "all";
-  const events = omitDependencyPackageChanges(
-    await readEvents(eventLogFile(state.currentRun.runDir), 1_000, afterSeq),
-  );
+  const events = omitDependencyPackageChanges(await readEvents(eventLogFile(target.runDir), 1_000, afterSeq));
   const filtered = stream === "stdout" || stream === "stderr"
     ? events.filter((event) => event.source === stream || event.source === "system")
     : events;
   return filtered.slice(-limit);
+}
+
+function resolveRun(
+  state: SupervisorState,
+  payload: Record<string, unknown>,
+  env: NodeJS.ProcessEnv,
+): { runId: string; runDir: string } | null {
+  const instance = requireInstance(state, payload.instanceId);
+  const requestedRunId = typeof payload.runId === "string" ? payload.runId : null;
+  if (!requestedRunId) {
+    return instance.currentRun
+      ? { runId: instance.currentRun.runId, runDir: instance.currentRun.runDir }
+      : null;
+  }
+  if (instance.currentRun?.runId === requestedRunId) {
+    return { runId: requestedRunId, runDir: instance.currentRun.runDir };
+  }
+  if (instance.history.includes(requestedRunId) && /^[A-Za-z0-9-]+$/.test(requestedRunId)) {
+    return { runId: requestedRunId, runDir: runDirectory(requestedRunId, env) };
+  }
+  throw new ActionError("NOT_FOUND", `run ${requestedRunId} does not belong to instance ${instance.name}`);
 }
 
 async function workerRequest(socketPath: string, type: string): Promise<unknown> {
@@ -412,7 +506,7 @@ async function workerRequest(socketPath: string, type: string): Promise<unknown>
     socket.once("error", (error) => finish(() => reject(error)));
     socket.once("close", () => finish(() => reject(new Error("worker closed the connection without a response"))));
     socket.once("connect", () => {
-      socket.write(`${JSON.stringify({ protocol: PROTOCOL_VERSION, id, type, payload: {} })}\n`);
+      socket.write(`${JSON.stringify({ protocol: WORKER_PROTOCOL_VERSION, id, type, payload: {} })}\n`);
     });
     socket.on("data", (chunk: string) => {
       buffer += chunk;
@@ -436,6 +530,26 @@ async function waitForTerminal(runDir: string, timeoutMs: number): Promise<Worke
   return loadWorkerState(runDir);
 }
 
+async function portIsAvailable(port: number): Promise<boolean> {
+  if (!(await addressPortIsAvailable(port, "0.0.0.0"))) return false;
+  return addressPortIsAvailable(port, "::");
+}
+
+async function addressPortIsAvailable(port: number, host: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE" || error.code === "EACCES") resolve(false);
+      else if (error.code === "EAFNOSUPPORT" || error.code === "EADDRNOTAVAIL") resolve(true);
+      else reject(error);
+    });
+    server.listen({ port, host, exclusive: true }, () => {
+      server.close(() => resolve(true));
+    });
+  });
+}
+
 async function assertSocketAvailable(socketPath: string): Promise<void> {
   const running = await new Promise<boolean>((resolve) => {
     const socket = net.createConnection(socketPath);
@@ -456,12 +570,56 @@ async function assertSocketAvailable(socketPath: string): Promise<void> {
   }
 }
 
-function isActive(state: LifecycleState): boolean {
-  return ACTIVE_STATES.has(state);
+function parseInstanceName(value: unknown): string {
+  try {
+    return instanceNameSchema.parse(value);
+  } catch (error) {
+    throw new ActionError("INVALID_CONFIG", error instanceof Error ? error.message : String(error));
+  }
 }
 
-function sameConfig(left: LaunchConfig, right: LaunchConfig): boolean {
-  return JSON.stringify({ ...left, quiet: false }) === JSON.stringify({ ...right, quiet: false });
+function parseConfig(value: unknown): LaunchConfig {
+  try {
+    return parseLaunchConfig(value);
+  } catch (error) {
+    throw new ActionError("INVALID_CONFIG", error instanceof Error ? error.message : String(error));
+  }
+}
+
+function assertUniqueProfile(
+  state: SupervisorState,
+  name: string,
+  config: LaunchConfig,
+  excludeId?: string,
+): void {
+  const sameName = state.instances.find((instance) => (
+    instance.id !== excludeId && instance.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+  ));
+  if (sameName) {
+    throw new ActionError("INSTANCE_NAME_CONFLICT", `an instance named ${name} already exists`, { instanceId: sameName.id });
+  }
+  const samePort = state.instances.find((instance) => instance.id !== excludeId && instance.config.port === config.port);
+  if (samePort) {
+    throw new ActionError("PORT_CONFLICT", `port ${config.port} is assigned to instance ${samePort.name}`, {
+      instanceId: samePort.id,
+      port: config.port,
+    });
+  }
+}
+
+function requireInstance(state: SupervisorState, value: unknown): InstanceRecord {
+  if (typeof value !== "string") throw new ActionError("INSTANCE_NOT_FOUND", "instanceId is required");
+  const instance = state.instances.find((candidate) => candidate.id === value);
+  if (!instance) throw new ActionError("INSTANCE_NOT_FOUND", `instance not found: ${value}`);
+  return instance;
+}
+
+function instanceStatus(instance: InstanceRecord): InstanceStatus {
+  return { id: instance.id, name: instance.name, config: instance.config, run: instance.currentRun };
+}
+
+function isActive(state: LifecycleState): boolean {
+  return ACTIVE_STATES.has(state);
 }
 
 function stripConfig(record: RunRecord): Omit<RunRecord, "config"> {

@@ -3,11 +3,11 @@ function __pl_seen_subcommand
     contains -- run $cmd; or contains -- docker $cmd; or contains -- start $cmd; or contains -- status $cmd; or contains -- stop $cmd; or contains -- restart $cmd; or contains -- logs $cmd; or contains -- backend $cmd; or contains -- help $cmd; or contains -- version $cmd
 end
 
-complete -c pl -f -n 'not __pl_seen_subcommand' -a start -d 'Start the saved configuration'
-complete -c pl -f -n 'not __pl_seen_subcommand' -a run -d 'Start a Git checkout configuration'
-complete -c pl -f -n 'not __pl_seen_subcommand' -a docker -d 'Start a Docker configuration'
-complete -c pl -f -n 'not __pl_seen_subcommand' -a status -d 'Show backend and instance status'
-complete -c pl -f -n 'not __pl_seen_subcommand' -a stop -d 'Stop the managed instance'
+complete -c pl -f -n 'not __pl_seen_subcommand' -a start -d 'Start a configured instance'
+complete -c pl -f -n 'not __pl_seen_subcommand' -a run -d 'Create or update and start a Git instance'
+complete -c pl -f -n 'not __pl_seen_subcommand' -a docker -d 'Create or update and start a Docker instance'
+complete -c pl -f -n 'not __pl_seen_subcommand' -a status -d 'Show backend and all instance statuses'
+complete -c pl -f -n 'not __pl_seen_subcommand' -a stop -d 'Stop an instance'
 complete -c pl -f -n 'not __pl_seen_subcommand' -a restart -d 'Restart the active or failed instance'
 complete -c pl -f -n 'not __pl_seen_subcommand' -a logs -d 'Print or follow lifecycle logs'
 complete -c pl -f -n 'not __pl_seen_subcommand' -a backend -d 'Manage the backend supervisor'
@@ -18,16 +18,19 @@ complete -c pl -f -n 'not __pl_seen_subcommand' -s v -l version -d 'Show the ins
 complete -c pl -f -s q -l quiet -d 'Suppress PrairieLearn launcher output'
 complete -c pl -f -l json -d 'Emit JSON output'
 complete -c pl -f -l detach -d 'Wait for startup and detach'
+complete -c pl -f -n '__fish_seen_subcommand_from run docker start status stop restart logs' -l instance -r -d 'Named instance profile'
 
 complete -c pl -n '__fish_seen_subcommand_from run' -s b -l branch -r -d 'Branch, remote branch, or ref to launch'
 complete -c pl -n '__fish_seen_subcommand_from run' -s f -l force-rebuild -d 'Rebuild all dependencies before launch'
 complete -c pl -n '__fish_seen_subcommand_from run' -s l -l local-only -d 'Skip git pull before launch'
 complete -c pl -n '__fish_seen_subcommand_from run' -s p -l path -r -F -d 'PrairieLearn server checkout path'
+complete -c pl -n '__fish_seen_subcommand_from run' -l port -r -d 'Host TCP port'
+complete -c pl -n '__fish_seen_subcommand_from run' -l isolated-database -d 'Use a profile-specific PostgreSQL database'
 complete -c pl -n '__fish_seen_subcommand_from run' -s q -l quiet -d 'Suppress PrairieLearn launcher output'
 complete -c pl -n '__fish_seen_subcommand_from run' -s w -l no-watch-upstream -d 'Disable upstream polling and auto-restart'
 complete -c pl -n '__fish_seen_subcommand_from run' -l allow-pull-failure -d 'Continue after git pull fails'
 
-complete -c pl -n '__fish_seen_subcommand_from docker' -l port -r -d 'Docker port mapping'
+complete -c pl -n '__fish_seen_subcommand_from docker' -l port -r -d 'Host TCP port mapped to container port 3000'
 complete -c pl -n '__fish_seen_subcommand_from docker' -l tmp-dir -r -F -d 'Parent directory for temporary Docker jobs directories'
 complete -c pl -n '__fish_seen_subcommand_from docker' -s l -l local-only -d 'Use the local Docker image without pulling'
 complete -c pl -n '__fish_seen_subcommand_from docker' -s q -l quiet -d 'Suppress PrairieLearn launcher output'

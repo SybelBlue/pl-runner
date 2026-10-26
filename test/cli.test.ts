@@ -3,14 +3,17 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { main, parseArgs } from "../src/cli.ts";
 
-test("parses run options and quiet aliases", () => {
-  const parsed = parseArgs(["--quiet", "run", "--branch", "main", "-f", "-l", "-p", "/pl", "-w", "--detach", "--json", "--allow-pull-failure"]);
+test("parses run options, selectors, ports, and quiet aliases", () => {
+  const parsed = parseArgs(["--quiet", "run", "--instance", "alpha", "--branch", "main", "--port", "3001", "--isolated-database", "-f", "-l", "-p", "/pl", "-w", "--detach", "--json", "--allow-pull-failure"]);
   assert.equal(parsed.command, "run");
   assert.equal(parsed.options.quiet, true);
   assert.equal(parsed.options.branch, "main");
   assert.equal(parsed.options.force_rebuild, true);
   assert.equal(parsed.options.local_only, true);
   assert.equal(parsed.options.path, "/pl");
+  assert.equal(parsed.options.port, 3001);
+  assert.equal(parsed.options.isolated_database, true);
+  assert.equal(parsed.instance, "alpha");
   assert.equal(parsed.options.no_watch_upstream, true);
   assert.equal(parsed.detach, true);
   assert.equal(parsed.json, true);
@@ -18,11 +21,11 @@ test("parses run options and quiet aliases", () => {
 });
 
 test("parses docker options and positional course path", () => {
-  const parsed = parseArgs(["docker", "--image", "latest", "--port", "3001:3000", "--tmp-dir", "/tmp", "-l", "-q", "course"]);
+  const parsed = parseArgs(["docker", "--image", "latest", "--port", "3001", "--tmp-dir", "/tmp", "-l", "-q", "course"]);
   assert.equal(parsed.command, "docker");
   assert.deepEqual(parsed.docker, {
     image: "latest",
-    port: "3001:3000",
+    port: 3001,
     tmp_dir: "/tmp",
     local_only: true,
     quiet: true,

@@ -9,31 +9,35 @@ import {
   ConfigView,
   DashboardMenu,
   LogLine,
+  ProfileHeader,
   StatusLine,
   canRestart,
   configFields,
   formatConfig,
   logColor,
+  relativeInstanceId,
   titlebarSequence,
   visibleLogEvents,
 } from "../src/tui.tsx";
 import type { LaunchConfig, RunEvent, SupervisorStatus } from "../src/types.ts";
 
-const gitConfig: LaunchConfig = {
+const gitConfig: Extract<LaunchConfig, { mode: "git" }> = {
   mode: "git",
   path: "/PrairieLearn",
   branch: "main",
+  port: 3000,
+  isolated_database: false,
   force_rebuild: false,
   local_only: true,
   no_watch_upstream: false,
   quiet: false,
 };
 
-const dockerConfig: LaunchConfig = {
+const dockerConfig: Extract<LaunchConfig, { mode: "docker" }> = {
   mode: "docker",
   course_path: "/course",
   image: "us-prod-live",
-  port: "3000:3000",
+  port: 3001,
   tmp_dir: "/tmp",
   local_only: false,
   quiet: false,
@@ -41,25 +45,43 @@ const dockerConfig: LaunchConfig = {
 
 test("renders the dashboard status summary", () => {
   const status: SupervisorStatus = {
-    backend: { running: true, pid: 123, protocolVersion: 1, packageVersion: "0.2.0" },
-    savedConfig: gitConfig,
-    instance: {
-      runId: "12345678-aaaa-bbbb-cccc-dddddddddddd",
-      runDir: "/state/run",
-      workerSocket: "/tmp/worker.sock",
+    backend: { running: true, pid: 123, protocolVersion: 2, packageVersion: "0.2.0" },
+    instances: [{
+      id: "instance-a",
+      name: "alpha",
       config: gitConfig,
-      state: "running",
-      pid: 456,
-      childPid: 789,
-      startedAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-      exitCode: null,
-      errorCode: null,
-      errorMessage: null,
-    },
+      run: {
+        instanceId: "instance-a",
+        runId: "12345678-aaaa-bbbb-cccc-dddddddddddd",
+        runDir: "/state/run",
+        workerSocket: "/tmp/worker.sock",
+        config: gitConfig,
+        state: "running",
+        pid: 456,
+        childPid: 789,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        exitCode: null,
+        errorCode: null,
+        errorMessage: null,
+      },
+    }],
   };
-  const view = render(<StatusLine status={status} />);
-  assert.match(view.lastFrame() ?? "", /Instance: running · git \/PrairieLearn @ main · run 12345678/);
+  const view = render(<StatusLine status={status} selectedId="instance-a" />);
+  assert.match(view.lastFrame() ?? "", /Instance: running · run 12345678/);
+  const header = render(<ProfileHeader instances={status.instances} selectedId="instance-a" />);
+  assert.match(header.lastFrame() ?? "", /1\/1 · alpha · localhost:3000 · running/);
+});
+
+test("renders the selected profile position and port", () => {
+  const instances = [
+    { id: "one", name: "main", config: gitConfig, run: null },
+    { id: "two", name: "feature", config: { ...gitConfig, port: 3002 }, run: null },
+  ];
+  const view = render(<ProfileHeader instances={instances} selectedId="two" />);
+  assert.match(view.lastFrame() ?? "", /2\/2 · feature · localhost:3002 · stopped/);
+  assert.equal(relativeInstanceId(instances, "one", -1), "two");
+  assert.equal(relativeInstanceId(instances, "two", 1), "one");
 });
 
 test("only enables restart while the instance is running", () => {
@@ -67,6 +89,11 @@ test("only enables restart while the instance is running", () => {
   for (const state of [undefined, "stopped", "failed", "preparing", "starting", "stopping"] as const) {
     assert.equal(canRestart(state), false);
   }
+});
+
+test("exposes profile ports and optional Git database isolation", () => {
+  assert.deepEqual(configFields(gitConfig).slice(2, 4).map((field) => field.key), ["port", "isolated_database"]);
+  assert.equal(configFields(dockerConfig).some((field) => field.key === "port"), true);
 });
 
 test("shows only dashboard actions valid for the lifecycle state", () => {
@@ -79,6 +106,7 @@ test("shows only dashboard actions valid for the lifecycle state", () => {
   assert.match(view.lastFrame() ?? "", /x stop/);
   assert.match(view.lastFrame() ?? "", /c view config/);
   assert.match(view.lastFrame() ?? "", /r restart/);
+  assert.doesNotMatch(view.lastFrame() ?? "", /Del delete/);
   assert.doesNotMatch(view.lastFrame() ?? "", /s start|c configure/);
 
   view.rerender(<DashboardMenu state="starting" />);
@@ -89,7 +117,7 @@ test("shows only dashboard actions valid for the lifecycle state", () => {
 
 test("removes the user-home prefix from titlebar configuration summaries", () => {
   const home = os.homedir();
-  assert.equal(formatConfig({ ...gitConfig, path: `${home}/Documents/PrairieLearn` }), "git Documents/PrairieLearn @ main");
+  assert.equal(formatConfig({ ...gitConfig, path: `${home}/Documents/PrairieLearn` }), "git Documents/PrairieLearn @ main (:3000)");
   assert.equal(
     titlebarSequence("/Users/example/Documents/PrairieLearn", "/Users/example"),
     "\u001B]0;Documents/PrairieLearn\u0007",
@@ -142,7 +170,7 @@ test("shows only the diagnostic relevant to the highlighted configuration field"
   view.rerender(<ConfigView
     draft={gitConfig}
     fields={fields}
-    fieldIndex={2}
+    fieldIndex={4}
     editing={null}
     hostInfo={hostInfo}
     error={null}
@@ -153,7 +181,7 @@ test("shows only the diagnostic relevant to the highlighted configuration field"
   view.rerender(<ConfigView
     draft={gitConfig}
     fields={fields}
-    fieldIndex={3}
+    fieldIndex={5}
     editing={null}
     hostInfo={hostInfo}
     error={null}

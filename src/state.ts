@@ -38,6 +38,8 @@ export function parseConfigYaml(contents: string): SavedConfig | null {
         mode: "git",
         path: requireString(values, "path"),
         branch: optionalString(values.get("branch")),
+        port: optionalPort(values.get("port")) ?? 3000,
+        isolated_database: optionalBoolean(values.get("isolated_database"), false),
         force_rebuild: requireBoolean(values, "force_rebuild"),
         local_only: requireBoolean(values, "local_only"),
         no_watch_upstream: requireBoolean(values, "no_watch_upstream"),
@@ -51,12 +53,12 @@ export function parseConfigYaml(contents: string): SavedConfig | null {
         mode: "docker",
         course_path: requireString(values, "course_path"),
         image: normalizeDockerImageTag(optionalString(values.get("image")) ?? undefined),
-        port: requireString(values, "port"),
+        port: optionalDockerHostPort(values.get("port")) ?? 3000,
         tmp_dir: requireString(values, "tmp_dir"),
         local_only: requireBoolean(values, "local_only"),
         quiet: requireBoolean(values, "quiet"),
       };
-      return config.course_path && config.port && config.tmp_dir ? config : null;
+      return config.course_path && config.tmp_dir ? config : null;
     }
     return null;
   } catch {
@@ -70,6 +72,8 @@ export function stringifyConfigYaml(config: SavedConfig): string {
       "mode: git",
       `path: ${formatScalar(config.path)}`,
       `branch: ${config.branch === null ? "null" : formatScalar(config.branch)}`,
+      `port: ${config.port}`,
+      `isolated_database: ${config.isolated_database}`,
       `force_rebuild: ${config.force_rebuild}`,
       `local_only: ${config.local_only}`,
       `no_watch_upstream: ${config.no_watch_upstream}`,
@@ -82,7 +86,7 @@ export function stringifyConfigYaml(config: SavedConfig): string {
     "mode: docker",
     `course_path: ${formatScalar(config.course_path)}`,
     `image: ${formatScalar(config.image)}`,
-    `port: ${formatScalar(config.port)}`,
+    `port: ${config.port}`,
     `tmp_dir: ${formatScalar(config.tmp_dir)}`,
     `local_only: ${config.local_only}`,
     `quiet: ${config.quiet}`,
@@ -117,4 +121,23 @@ function requireBoolean(values: Map<string, string | null>, key: string): boolea
   if (value === "true") return true;
   if (value === "false") return false;
   throw new Error(`invalid boolean: ${key}`);
+}
+
+function optionalBoolean(value: string | null | undefined, fallback: boolean): boolean {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error("invalid boolean");
+}
+
+function optionalPort(value: string | null | undefined): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const port = Number(value);
+  return Number.isInteger(port) && port >= 1 && port <= 65_535 ? port : null;
+}
+
+function optionalDockerHostPort(value: string | null | undefined): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const parts = value.split("/", 1)[0]?.split(":") ?? [];
+  return optionalPort(parts.length >= 2 ? parts.at(-2) : parts[0]);
 }
