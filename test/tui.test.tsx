@@ -8,6 +8,7 @@ import {
   ConfigView,
   LogLine,
   StatusLine,
+  canRestart,
   configFields,
   visibleLogEvents,
 } from "../src/tui.tsx";
@@ -20,6 +21,16 @@ const gitConfig: LaunchConfig = {
   force_rebuild: false,
   local_only: true,
   no_watch_upstream: false,
+  quiet: false,
+};
+
+const dockerConfig: LaunchConfig = {
+  mode: "docker",
+  course_path: "/course",
+  image: "us-prod-live",
+  port: "3000:3000",
+  tmp_dir: "/tmp",
+  local_only: false,
   quiet: false,
 };
 
@@ -46,6 +57,13 @@ test("renders the dashboard status summary", () => {
   assert.match(view.lastFrame() ?? "", /Instance: running · git \/PrairieLearn @ main · run 12345678/);
 });
 
+test("only enables restart while the instance is running", () => {
+  assert.equal(canRestart("running"), true);
+  for (const state of [undefined, "stopped", "failed", "preparing", "starting", "stopping"] as const) {
+    assert.equal(canRestart(state), false);
+  }
+});
+
 test("renders backend-driven configuration details", () => {
   const fields = configFields(gitConfig);
   const view = render(<ConfigView
@@ -58,8 +76,24 @@ test("renders backend-driven configuration details", () => {
   />);
   const frame = view.lastFrame() ?? "";
   assert.match(frame, /Configuration · git/);
+  assert.match(frame, /s switch to docker/);
+  assert.match(frame, /c confirm/);
+  assert.match(frame, /q\/Esc cancel/);
   assert.match(frame, /PrairieLearn path: \/PrairieLearn/);
   assert.match(frame, /Available branches: main, feature/);
+});
+
+test("configuration mode control names git as the target from Docker mode", () => {
+  const view = render(<ConfigView
+    draft={dockerConfig}
+    fields={configFields(dockerConfig)}
+    fieldIndex={0}
+    editing={null}
+    hostInfo={null}
+    error={null}
+  />);
+
+  assert.match(view.lastFrame() ?? "", /s switch to git/);
 });
 
 test("offers repository branches while editing the branch field", () => {
@@ -127,6 +161,27 @@ test("indents wrapped log output past the event prefix", () => {
   assert.ok(lines.length > 1);
   assert.equal(lines[0]?.slice(0, 18), " 304 server       ");
   for (const line of lines.slice(1)) assert.match(line, /^ {18}/);
+});
+
+test("does not overlap mixed log events when a message wraps", () => {
+  const events: RunEvent[] = [
+    { ...event(544, "stdout"), message: "Exit status 130" },
+    { ...event(545, "stdout"), message: "A long command with enough content that it wraps onto another terminal line" },
+    { ...event(546, "stderr"), message: "make: *** [dev] Error 130" },
+    { ...event(547, "system"), message: "make dev exited with 130" },
+  ];
+  const output = renderToString(
+    <Box width={70} height={4} flexDirection="column" overflow="hidden" contentOffsetY={1}>
+      <Box flexDirection="column" flexShrink={0}>
+        {events.map((item) => <LogLine key={item.seq} event={item} />)}
+      </Box>
+    </Box>,
+    { columns: 70 },
+  );
+
+  assert.match(output, /^ 546 server {7}make: \*\*\* \[dev\] Error 130$/m);
+  assert.match(output, /^ 547 server {7}make dev exited with 130$/m);
+  assert.doesNotMatch(output, /Error 130\S/);
 });
 
 function event(seq: number, source: RunEvent["source"]): RunEvent {

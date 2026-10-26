@@ -6,11 +6,10 @@ import { mouseEventIsInside, useMouseWheel } from "./mouse.js";
 import { resolvePath } from "./path.js";
 import { RemoteError } from "./protocol.js";
 import type { DOMElement } from "ink";
-import type { LaunchConfig, RunEvent, RunRecord, SupervisorStatus } from "./types.js";
+import type { LaunchConfig, LifecycleState, RunEvent, RunRecord, SupervisorStatus } from "./types.js";
 
 type View = "dashboard" | "config";
 type StreamFilter = "all" | "stdout" | "stderr";
-type ConfirmAction = "stop" | "restart" | null;
 
 export type ConfigField = {
   label: string;
@@ -50,7 +49,9 @@ function App(): React.ReactElement {
   const { exit } = useApp();
   useStdout();
   const logWindowRef = useRef<DOMElement>(null);
+  const logContentRef = useRef<DOMElement>(null);
   const logWindow = useBoxMetrics(logWindowRef);
+  const logContent = useBoxMetrics(logContentRef);
   const [status, setStatus] = useState<SupervisorStatus | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -59,7 +60,6 @@ function App(): React.ReactElement {
   const [view, setView] = useState<View>("dashboard");
   const [filter, setFilter] = useState<StreamFilter>("all");
   const [scrollOffset, setScrollOffset] = useState(0);
-  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [draft, setDraft] = useState<LaunchConfig>(defaultGitConfig);
   const [fieldIndex, setFieldIndex] = useState(0);
   const [editing, setEditing] = useState<EditingField | null>(null);
@@ -95,6 +95,7 @@ function App(): React.ReactElement {
   }, [view, draft.mode, draft.mode === "git" ? draft.path : ""]);
 
   const active = Boolean(status?.instance && isActive(status.instance.state));
+  const restartAvailable = canRestart(status?.instance?.state);
   const displayedErrorCode = errorCode ?? (status?.instance?.state === "failed" ? status.instance.errorCode : null);
   const displayedError = error ?? (status?.instance?.state === "failed" ? status.instance.errorMessage : null);
   const fields = configFields(draft);
@@ -159,10 +160,10 @@ function App(): React.ReactElement {
       }
       if (key.upArrow) setFieldIndex((index) => Math.max(0, index - 1));
       else if (key.downArrow) setFieldIndex((index) => Math.min(fields.length - 1, index + 1));
-      else if (input === "m") {
+      else if (input === "s") {
         setDraft(draft.mode === "git" ? defaultDockerConfig() : defaultGitConfig);
         setFieldIndex(0);
-      } else if (input === "s") {
+      } else if (input === "c") {
         void perform(async () => {
           await requestBackend("config.set", { config: normalizeClientConfig(draft) });
           setView("dashboard");
@@ -179,24 +180,13 @@ function App(): React.ReactElement {
       return;
     }
 
-    if (confirmAction) {
-      if (input === "y") {
-        const action = confirmAction;
-        setConfirmAction(null);
-        void perform(() => requestBackend(action === "stop" ? "instance.stop" : "instance.restart"));
-      } else if (input === "n" || key.escape) {
-        setConfirmAction(null);
-      }
-      return;
-    }
-
     if (input === "q") exit();
     else if (input === "c" && !active) {
       setDraft(status?.savedConfig ?? defaultGitConfig);
       setView("config");
     } else if (input === "s") void start();
-    else if (input === "x" && active) setConfirmAction("stop");
-    else if (input === "r" && status?.instance && status.instance.state !== "stopped") setConfirmAction("restart");
+    else if (input === "x" && active) void perform(() => requestBackend("instance.stop"));
+    else if (input === "r" && restartAvailable) void perform(() => requestBackend("instance.restart"));
     else if (input === "f") setFilter((current) => current === "all" ? "stdout" : current === "stdout" ? "stderr" : "all");
     else if (key.upArrow || key.pageUp) setScrollOffset((offset) => Math.min(events.length, offset + (key.pageUp ? 10 : 1)));
     else if (key.downArrow || key.pageDown) setScrollOffset((offset) => Math.max(0, offset - (key.pageDown ? 10 : 1)));
@@ -219,6 +209,9 @@ function App(): React.ReactElement {
 
   const logRows = Math.max(3, rows - 11);
   const visible = visibleLogEvents(events, filter, scrollOffset, logRows);
+  const logContentOffset = logWindow.hasMeasured && logContent.hasMeasured
+    ? Math.max(0, logContent.height - logWindow.clientHeight)
+    : 0;
 
   return <Box flexDirection="column" height={rows}>
     <Box justifyContent="space-between">
@@ -228,17 +221,23 @@ function App(): React.ReactElement {
     <StatusLine status={status} />
     <Text>Saved: {formatConfig(status?.savedConfig ?? null)}</Text>
     <Text dimColor>Keys: s start · x stop · r restart · c configure · f filter · ↑/↓/wheel scroll · End follow · q quit</Text>
-    {confirmAction ? <Text color="yellow">Confirm {confirmAction}? y/n</Text> : <Text>Logs: {filter} · {scrollOffset === 0 ? "following" : `${scrollOffset} lines from bottom`}</Text>}
-    <Box ref={logWindowRef} borderStyle="round" borderColor="gray" flexDirection="column" flexGrow={1} overflow="hidden">
-      {visible.length === 0 ? <Text dimColor>No lifecycle output yet.</Text> : visible.map((event) => <LogLine key={event.seq} event={event} />)}
+    <Text>Logs: {filter} · {scrollOffset === 0 ? "following" : `${scrollOffset} lines from bottom`}</Text>
+    <Box ref={logWindowRef} borderStyle="round" borderColor="gray" flexDirection="column" flexGrow={1} overflow="hidden" contentOffsetY={logContentOffset}>
+      <Box ref={logContentRef} flexDirection="column" flexShrink={0}>
+        {visible.length === 0 ? <Text dimColor>No lifecycle output yet.</Text> : visible.map((event) => <LogLine key={event.seq} event={event} />)}
+      </Box>
     </Box>
     {displayedError ? <Text color="red">{displayedError}{displayedErrorCode === "PULL_FAILED" ? " · p: retry without pull" : displayedErrorCode === "DOCKER_DAEMON_UNAVAILABLE" ? " · d: start Docker and retry" : ""}</Text> : null}
   </Box>;
 }
 
+export function canRestart(state: LifecycleState | undefined): boolean {
+  return state === "running";
+}
+
 export function LogLine({ event }: { event: RunEvent }): React.ReactElement {
   const color = event.source === "stderr" ? "red" : event.source === "system" ? "yellow" : undefined;
-  return <Box>
+  return <Box flexShrink={0}>
     <Box width={18} flexShrink={0}>
       <Text dimColor color={color}>{String(event.seq).padStart(4)} {event.phase.padEnd(12)} </Text>
     </Box>
@@ -271,7 +270,7 @@ export function ConfigView(props: {
   const suggestionIndex = Math.min(props.editing?.suggestionIndex ?? 0, suggestions.length - 1);
   return <Box flexDirection="column">
     <Text bold color="cyan">Configuration · {props.draft.mode}</Text>
-    <Text dimColor>m switch mode · ↑/↓ select · Enter edit/toggle · s save · q cancel</Text>
+    <Text dimColor>s switch to {props.draft.mode === "git" ? "docker" : "git"} · ↑/↓ select · Enter edit/toggle · c confirm · q/Esc cancel</Text>
     <Box marginTop={1} flexDirection="column">
       {props.fields.map((field, index) => (
         <Text key={field.key} color={index === props.fieldIndex ? "cyan" : undefined}>
