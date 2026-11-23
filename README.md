@@ -60,4 +60,4 @@ From a clean branch, choose the version component to advance:
 make publish patch
 ```
 
-`minor` and `major` are also supported. The command builds first, then `npm version` updates `package.json` and `package-lock.json` and creates the version commit and tag before publishing with pnpm. If the version was bumped and committed separately, use `make publish current` to publish it without another bump.
+`minor` and `major` are also supported. The command builds first, then `npm version` updates `package.json` and `package-lock.json` and creates the version commit and tag. It atomically pushes `main` and the tag before publishing with pnpm. If the version was bumped and committed separately, or a publish needs to be retried after the refs were pushed, use `make publish current` to publish it without another bump.
