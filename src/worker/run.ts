@@ -1,8 +1,11 @@
+import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { hasInternet } from "../system/internet.js";
 import { createBranchWorktree } from "./worktree.js";
 import { git, validateProjectPath } from "../system/git.js";
 import { resolvePath, withoutVirtualEnv } from "../system/path.js";
-import { runInteractiveProcess } from "../system/process.js";
+import { runCommand, runInteractiveProcess } from "../system/process.js";
 import {
   ensureIsolatedDatabase,
   writeEffectivePrairieLearnConfig,
@@ -98,6 +101,24 @@ export async function launchRun(
   let branchWorktree = false;
 
   try {
+    let launchEnv = withoutVirtualEnv(runtime?.env);
+    const supportStatus = await prepareSupportServices(
+      config.path,
+      config.quiet,
+      logger,
+      control,
+      launchEnv,
+    );
+    if (supportStatus !== 0) {
+      const message = `PrairieLearn support services exited with ${supportStatus}`;
+      control.onFailure?.("SUPPORT_SERVICE_PREPARATION_FAILED", message);
+      logger.error(message);
+      return supportStatus;
+    }
+    if (!(await validateLocalRedis(launchEnv, logger, control))) return 1;
+
+    if (control.shouldStop?.()) return 130;
+
     if (config.branch) {
       const worktree = await createBranchWorktree(
         config.path,
@@ -109,6 +130,7 @@ export async function launchRun(
       launchPath = worktree.path;
       cleanup = worktree.cleanup;
       branchWorktree = true;
+      await linkStableS3Data(config.path, launchPath);
     }
 
     if (control.shouldStop?.()) return 130;
@@ -132,7 +154,6 @@ export async function launchRun(
 
     if (control.shouldStop?.()) return 130;
 
-    let launchEnv = withoutVirtualEnv(runtime?.env);
     if (runtime) {
       const effective = await writeEffectivePrairieLearnConfig({
         launchPath,
@@ -144,28 +165,6 @@ export async function launchRun(
       });
       launchEnv = { ...launchEnv, PL_CONFIG_PATH: effective.path };
       if (effective.databaseName) {
-        logger.info(
-          "starting PrairieLearn support services for isolated database setup...",
-        );
-        const supportStatus = await runInteractiveProcess(
-          "make",
-          ["-C", launchPath, "start-support"],
-          {
-            quiet: config.quiet,
-            env: launchEnv,
-            handleSignals: false,
-            onSpawn: control.onSpawn,
-            onExitRequest: control.onProcess,
-            onOutput: (source, chunk) =>
-              control.onOutput?.(source, chunk, "database"),
-          },
-        );
-        if (supportStatus !== 0) {
-          const message = `PrairieLearn support services exited with ${supportStatus}`;
-          control.onFailure?.("DATABASE_PREPARATION_FAILED", message);
-          logger.error(message);
-          return supportStatus;
-        }
         try {
           await ensureIsolatedDatabase(effective.databaseName, logger);
         } catch (error) {
@@ -239,6 +238,113 @@ export async function launchRun(
     return 1;
   } finally {
     if (cleanup) await cleanup();
+  }
+}
+
+async function prepareSupportServices(
+  projectPath: string,
+  quiet: boolean,
+  logger: Logger,
+  control: LaunchControl,
+  env: NodeJS.ProcessEnv,
+): Promise<number> {
+  logger.info("--- make start-postgres start-redis ---");
+  const status = await runInteractiveProcess(
+    "make",
+    ["-C", projectPath, "start-postgres", "start-redis"],
+    {
+      quiet,
+      env,
+      handleSignals: false,
+      onSpawn: control.onSpawn,
+      onExitRequest: control.onProcess,
+      onOutput: (source, chunk) => control.onOutput?.(source, chunk, "support"),
+    },
+  );
+  if (status !== 0)
+    logger.warn(`PrairieLearn support services exited with ${status}`);
+  return status;
+}
+
+async function validateLocalRedis(
+  env: NodeJS.ProcessEnv,
+  logger: Logger,
+  control: LaunchControl,
+): Promise<boolean> {
+  if (env.REDIS_HOST) return true;
+
+  const persistence = await runCommand("redis-cli", ["INFO", "persistence"], {
+    env,
+  });
+  if (persistence.status !== 0) {
+    reportRedisFailure(
+      persistence.stderr.trim() ||
+        persistence.stdout.trim() ||
+        "redis-cli could not connect",
+      logger,
+      control,
+    );
+    return false;
+  }
+  if (/^rdb_last_bgsave_status:err\r?$/m.test(persistence.stdout)) {
+    reportRedisFailure(
+      "the last Redis background save failed",
+      logger,
+      control,
+    );
+    return false;
+  }
+
+  const key = `prairielearn-runner-health-${randomUUID()}`;
+  const write = await runCommand(
+    "redis-cli",
+    ["SET", key, "ok", "EX", "10", "NX"],
+    { env },
+  );
+  if (write.status !== 0 || write.stdout.trim() !== "OK") {
+    reportRedisFailure(
+      write.stderr.trim() ||
+        write.stdout.trim() ||
+        "Redis rejected a write probe",
+      logger,
+      control,
+    );
+    return false;
+  }
+  await runCommand("redis-cli", ["DEL", key], { env });
+  return true;
+}
+
+function reportRedisFailure(
+  detail: string,
+  logger: Logger,
+  control: LaunchControl,
+): void {
+  const message =
+    `Redis is unhealthy or not writable: ${detail}. ` +
+    "Stop active PrairieLearn instances, restart Redis from a stable data directory, and retry.";
+  control.onFailure?.("SUPPORT_SERVICE_UNHEALTHY", message);
+  logger.error(message);
+}
+
+async function linkStableS3Data(
+  sourcePath: string,
+  launchPath: string,
+): Promise<void> {
+  const stableDataPath = path.join(sourcePath, "s3rver");
+  const launchDataPath = path.join(launchPath, "s3rver");
+  await fs.mkdir(stableDataPath, { recursive: true });
+  try {
+    await fs.symlink(stableDataPath, launchDataPath, "dir");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const existingTarget = await fs.realpath(launchDataPath);
+    const stableTarget = await fs.realpath(stableDataPath);
+    if (existingTarget !== stableTarget) {
+      throw new Error(
+        `${launchDataPath} does not point to stable s3rver data at ${stableDataPath}`,
+      );
+    }
   }
 }
 

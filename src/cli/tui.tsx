@@ -1009,7 +1009,7 @@ export function configFields(config: LaunchConfig): ConfigField[] {
       { label: "Host port", key: "port", kind: "text" },
       { label: "Isolated database", key: "isolated_database", kind: "boolean" },
       {
-        label: "Force dependency rebuild",
+        label: "Always run make deps",
         key: "force_rebuild",
         kind: "boolean",
       },

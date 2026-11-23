@@ -17,6 +17,7 @@ CLI ─────┴→ typed client ─→ (protocol/framing)      │       
 - The supervisor service owns profile and run behavior. One state queue serializes both worker refreshes and mutations so concurrent requests cannot overwrite newer state.
 - Persistence, worker control, and host operations are injected service gateways with production implementations backed by the state store and local processes.
 - One detached worker owns each run. Workers perform preparation, own child process groups, capture output, watch upstream Git state, and remain alive if the supervisor exits.
+- Git workers start shared PostgreSQL and Redis services from the stable source checkout before creating a temporary branch worktree. They require local Redis persistence and writes to be healthy before launch, and temporary worktrees link s3rver storage back to the stable checkout.
 - Named profiles have unique host ports and independent current runs and histories. Any number can be active concurrently. A run contains an immutable configuration snapshot.
 
 ## Source layout

@@ -21,7 +21,7 @@ complete -c pl -f -l detach -d 'Wait for startup and detach'
 complete -c pl -f -n '__fish_seen_subcommand_from run docker start status stop restart logs' -l instance -r -d 'Named instance profile'
 
 complete -c pl -n '__fish_seen_subcommand_from run' -s b -l branch -r -d 'Branch, remote branch, or ref to launch'
-complete -c pl -n '__fish_seen_subcommand_from run' -s f -l force-rebuild -d 'Rebuild all dependencies before launch'
+complete -c pl -n '__fish_seen_subcommand_from run' -s f -l force-rebuild -d 'Run make deps before launch'
 complete -c pl -n '__fish_seen_subcommand_from run' -s l -l local-only -d 'Skip git pull before launch'
 complete -c pl -n '__fish_seen_subcommand_from run' -s p -l path -r -F -d 'PrairieLearn server checkout path'
 complete -c pl -n '__fish_seen_subcommand_from run' -l port -r -d 'Host TCP port'
