@@ -51,3 +51,13 @@ pnpm build
 ```
 
 Tests use isolated runtime/state directories and fake host commands; they do not require a real PrairieLearn checkout or Docker daemon.
+
+## Releasing
+
+From a clean branch, choose the version component to advance:
+
+```console
+make publish patch
+```
+
+`minor` and `major` are also supported. The command builds first, then `npm version` updates `package.json` and `package-lock.json` and creates the version commit and tag before publishing with pnpm. If the version was bumped and committed separately, use `make publish current` to publish it without another bump.
